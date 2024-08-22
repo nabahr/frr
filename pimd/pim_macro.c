@@ -110,7 +110,7 @@ int pim_macro_ch_lost_assert(const struct pim_ifchannel *ch)
 		return 0; /* false */
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: (S,G)=%s: multicast not enabled on interface %s",
 			  __func__, ch->sg_str, ifp->name);
 		return 0; /* false */
@@ -147,7 +147,7 @@ int pim_macro_chisin_pim_include(const struct pim_ifchannel *ch)
 	struct pim_interface *pim_ifp = ch->interface->info;
 	bool mlag_active = false;
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: (S,G)=%s: multicast not enabled on interface %s",
 			  __func__, ch->sg_str, ch->interface->name);
 		return 0; /* false */
@@ -285,7 +285,7 @@ pim_macro_ch_my_assert_metric_eval(const struct pim_ifchannel *ch)
 
 	pim_ifp = ch->interface->info;
 
-	if (pim_ifp) {
+	if (pim_ifp->multicast_enable) {
 		if (PIM_IF_FLAG_TEST_COULD_ASSERT(ch->flags)) {
 			return pim_macro_spt_assert_metric(
 				&ch->upstream->rpf, pim_ifp->primary_address);
@@ -383,7 +383,7 @@ int pim_macro_assert_tracking_desired_eval(const struct pim_ifchannel *ch)
 	}
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: (S,G)=%s: multicast not enabled on interface %s",
 			  __func__, ch->sg_str, ch->interface->name);
 		return 0; /* false */

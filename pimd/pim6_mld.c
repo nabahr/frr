@@ -1668,10 +1668,14 @@ static void gm_t_recv(struct event *t)
 	struct interface *ifp;
 
 	ifp = if_lookup_by_index(pkt_src->sin6_scope_id, pim->vrf->vrf_id);
-	if (!ifp || !ifp->info)
+	if (!ifp)
 		goto out_free;
 
 	struct pim_interface *pim_ifp = ifp->info;
+
+	if (!pim_ifp->multicast_enable)
+		goto out_free;
+
 	struct gm_if *gm_ifp = pim_ifp->mld;
 
 	if (!gm_ifp)
@@ -2101,7 +2105,12 @@ static void gm_start(struct interface *ifp)
 	struct pim_interface *pim_ifp = ifp->info;
 	struct gm_if *gm_ifp;
 
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
+
 	assert(pim_ifp->pim);
 	assert(pim_ifp->mroute_vif_index >= 0);
 	assert(!pim_ifp->mld);
@@ -2194,7 +2203,7 @@ void gm_ifp_teardown(struct interface *ifp)
 	struct pim_interface *pim_ifp = ifp->info;
 	struct gm_if *gm_ifp;
 
-	if (!pim_ifp || !pim_ifp->mld)
+	if (!pim_ifp->multicast_enable || !pim_ifp->mld)
 		return;
 
 	gm_ifp = pim_ifp->mld;
@@ -2277,7 +2286,7 @@ void gm_ifp_update(struct interface *ifp)
 	struct gm_if *gm_ifp;
 	bool changed = false;
 
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 	if (!if_is_operative(ifp) || !pim_ifp->pim ||
 	    pim_ifp->mroute_vif_index < 0) {
@@ -2377,7 +2386,7 @@ static void gm_show_if_one_detail(struct vty *vty, struct interface *ifp)
 	bool querier;
 	size_t i;
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		vty_out(vty, "Interface %s: no PIM/MLD config\n\n", ifp->name);
 		return;
 	}
@@ -2509,7 +2518,7 @@ static void gm_show_if_vrf(struct vty *vty, struct vrf *vrf, const char *ifname,
 
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp || !pim_ifp->mld)
+		if (!pim_ifp->multicast_enable || !pim_ifp->mld)
 			continue;
 
 		if (js) {
@@ -2643,9 +2652,9 @@ static void gm_show_stats_vrf(struct vty *vty, struct vrf *vrf,
 		if (ifname && strcmp(ifp->name, ifname))
 			continue;
 
-		if (!ifp->info)
-			continue;
 		pim_ifp = ifp->info;
+		if (!pim_ifp->multicast_enable)
+			continue;
 		if (!pim_ifp->mld)
 			continue;
 		gm_ifp = pim_ifp->mld;
@@ -2873,9 +2882,9 @@ static void gm_show_joins_vrf(struct vty *vty, struct vrf *vrf,
 		if (ifname && strcmp(ifp->name, ifname))
 			continue;
 
-		if (!ifp->info)
-			continue;
 		pim_ifp = ifp->info;
+		if (!pim_ifp->multicast_enable)
+			continue;
 		if (!pim_ifp->mld)
 			continue;
 		gm_ifp = pim_ifp->mld;
@@ -2970,7 +2979,7 @@ static void gm_show_groups(struct vty *vty, struct vrf *vrf, bool uj)
 		struct gm_if *gm_ifp;
 		struct gm_sg *sg;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		gm_ifp = pim_ifp->mld;
@@ -3072,7 +3081,7 @@ DEFPY(gm_debug_show,
 	}
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		vty_out(vty, "%% no PIM state for interface %pSQq\n", ifname);
 		return CMD_WARNING;
 	}
@@ -3190,7 +3199,7 @@ DEFPY(gm_debug_iface_cfg,
 	bool changed = false;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		vty_out(vty, "%% no PIM state for interface %pSQq\n",
 			ifp->name);
 		return CMD_WARNING;

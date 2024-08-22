@@ -411,11 +411,11 @@ static void pim_channel_update_mute(struct channel_oil *c_oil)
 
 	if (c_oil->pim->regiface) {
 		pim_reg_ifp = c_oil->pim->regiface->info;
-		if (pim_reg_ifp)
+		if (pim_reg_ifp->multicast_enable)
 			pim_channel_update_oif_mute(c_oil, pim_reg_ifp);
 	}
 	vxlan_ifp = pim_vxlan_get_term_ifp(c_oil->pim);
-	if (vxlan_ifp)
+	if (vxlan_ifp && vxlan_ifp->multicast_enable)
 		pim_channel_update_oif_mute(c_oil, vxlan_ifp);
 }
 

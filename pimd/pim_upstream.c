@@ -561,9 +561,9 @@ int pim_upstream_could_register(struct pim_upstream *up)
 				   up->sg_str);
 	}
 
-	if (pim_ifp && PIM_I_am_DR(pim_ifp)
-	    && pim_if_connected_to_source(up->rpf.source_nexthop.interface,
-					  up->sg.src))
+	if (pim_ifp && pim_ifp->multicast_enable && PIM_I_am_DR(pim_ifp) &&
+	    pim_if_connected_to_source(up->rpf.source_nexthop.interface,
+				       up->sg.src))
 		return 1;
 
 	return 0;
@@ -899,7 +899,12 @@ static struct pim_upstream *pim_upstream_new(struct pim_instance *pim,
 	    || PIM_UPSTREAM_FLAG_TEST_SRC_NOCACHE(up->flags)) {
 		pim_upstream_fill_static_iif(up, incoming);
 		pim_ifp = up->rpf.source_nexthop.interface->info;
-		assert(pim_ifp);
+		if (!pim_ifp->multicast_enable) {
+			zlog_warn("%s: multicast not enabled on interface %s",
+				  __func__,
+				  up->rpf.source_nexthop.interface->name);
+			return NULL;
+		}
 		pim_upstream_update_use_rpt(up,
 				false /*update_mroute*/);
 		pim_upstream_mroute_iif_update(up->channel_oil, __func__);
@@ -1146,7 +1151,7 @@ static bool pim_upstream_empty_immediate_olist(struct pim_instance *pim,
 	struct pim_ifchannel *ch;
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
-		if (!ifp->info)
+		if (!((struct pim_interface *)ifp->info)->multicast_enable)
 			continue;
 
 		ch = pim_ifchannel_find(ifp, &up->sg);
@@ -1346,7 +1351,7 @@ static void pim_upstream_update_assert_tracking_desired(struct pim_upstream *up)
 		if (!ch->interface)
 			continue;
 		pim_ifp = ch->interface->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		pim_ifchannel_update_assert_tracking_desired(ch);
@@ -1727,7 +1732,7 @@ static void pim_upstream_register_stop_timer(struct event *t)
 		}
 
 		pim_ifp = up->rpf.source_nexthop.interface->info;
-		if (!pim_ifp) {
+		if (!pim_ifp->multicast_enable) {
 			if (PIM_DEBUG_PIM_TRACE)
 				zlog_debug(
 					"%s: Interface: %s is not configured for pim",
@@ -1774,7 +1779,7 @@ static void pim_upstream_register_probe_timer(struct event *t)
 	struct pim_upstream *up = EVENT_ARG(t);
 
 	if (!up->rpf.source_nexthop.interface ||
-	    !up->rpf.source_nexthop.interface->info) {
+	    !((struct pim_interface *)up->rpf.source_nexthop.interface->info)->multicast_enable) {
 		if (PIM_DEBUG_PIM_REG)
 			zlog_debug("cannot send Null register for %pSG, no path to RP",
 				   &up->sg);
@@ -1822,7 +1827,8 @@ int pim_upstream_inherited_olist_decide(struct pim_instance *pim,
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		struct pim_interface *pim_ifp;
-		if (!ifp->info)
+		pim_ifp = ifp->info;
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		ch = pim_ifchannel_find(ifp, &up->sg);
@@ -1835,7 +1841,6 @@ int pim_upstream_inherited_olist_decide(struct pim_instance *pim,
 		if (!ch && !starch)
 			continue;
 
-		pim_ifp = ifp->info;
 		if (PIM_I_am_DualActive(pim_ifp)
 		    && PIM_UPSTREAM_FLAG_TEST_MLAG_INTERFACE(up->flags)
 		    && (PIM_UPSTREAM_FLAG_TEST_MLAG_NON_DF(up->flags)
@@ -1998,7 +2003,8 @@ bool pim_sg_is_reevaluate_oil_req(struct pim_instance *pim,
 	 * particularly important for VXLAN setups.
 	 */
 	if (up->channel_oil->oil_inherited_rescan ||
-	    (pim_ifp && I_am_RP(pim_ifp->pim, up->sg.grp)) ||
+	    (pim_ifp && pim_ifp->multicast_enable &&
+	     I_am_RP(pim_ifp->pim, up->sg.grp)) ||
 	    pim_upstream_empty_inherited_olist(up)) {
 		return true;
 	}

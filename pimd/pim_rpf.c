@@ -107,7 +107,7 @@ bool pim_nexthop_lookup(struct pim_instance *pim, struct pim_nexthop *nexthop,
 		}
 
 		pim_ifp = ifp->info;
-		if (!pim_ifp || !pim_ifp->pim_enable) {
+		if (!pim_ifp->multicast_enable || !pim_ifp->pim_enable) {
 			if (PIM_DEBUG_ZEBRA)
 				zlog_debug(
 					"%s: pim not enabled on input interface %s (ifindex=%d, RPF for source %pPAs)",

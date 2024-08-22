@@ -51,7 +51,11 @@ static void recv_join(struct interface *ifp, struct pim_neighbor *neigh,
 			holdtime, &neigh->source_addr, ifp->name);
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	++pim_ifp->pim_ifstat_join_recv;
 
@@ -123,7 +127,11 @@ static void recv_prune(struct interface *ifp, struct pim_neighbor *neigh,
 			holdtime, &neigh->source_addr, ifp->name);
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	++pim_ifp->pim_ifstat_prune_recv;
 
@@ -450,7 +458,7 @@ int pim_joinprune_send(struct pim_rpf *rpf, struct list *groups)
 
 	on_trace(__func__, rpf->source_nexthop.interface, rpf->rpf_addr);
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: multicast not enabled on interface %s", __func__,
 			  rpf->source_nexthop.interface->name);
 		return -1;

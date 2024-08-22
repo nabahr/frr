@@ -220,7 +220,7 @@ void pim_ifchannel_delete_all(struct interface *ifp)
 	struct pim_ifchannel *ch;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	while (!RB_EMPTY(pim_ifchannel_rb, &pim_ifp->ifchannel_rb)) {
@@ -432,7 +432,7 @@ struct pim_ifchannel *pim_ifchannel_find(struct interface *ifp, pim_sgaddr *sg)
 
 	pim_ifp = ifp->info;
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: (S,G)=%pSG: multicast not enabled on interface %s",
 			  __func__, sg, ifp->name);
 		return NULL;
@@ -475,7 +475,11 @@ void pim_ifchannel_membership_clear(struct interface *ifp)
 	struct pim_ifchannel *ch;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb)
 		ifmembership_set(ch, PIM_IFMEMBERSHIP_NOINFO);
@@ -487,7 +491,11 @@ void pim_ifchannel_delete_on_noinfo(struct interface *ifp)
 	struct pim_ifchannel *ch, *ch_tmp;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	RB_FOREACH_SAFE (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb, ch_tmp)
 		delete_on_noinfo(ch);
@@ -785,7 +793,11 @@ static int nonlocal_upstream(int is_join, struct interface *recv_ifp,
 	int is_local; /* boolean */
 
 	recv_pim_ifp = recv_ifp->info;
-	assert(recv_pim_ifp);
+	if (!recv_pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  recv_ifp->name);
+		return 0;
+	}
 
 	is_local = !pim_addr_cmp(upstream, recv_pim_ifp->primary_address);
 
@@ -868,7 +880,11 @@ void pim_ifchannel_join_add(struct interface *ifp, pim_addr neigh_addr,
 	}
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	switch (ch->ifjoin_state) {
 	case PIM_IFJOIN_NOINFO:
@@ -1137,7 +1153,7 @@ int pim_ifchannel_local_membership_add(struct interface *ifp, pim_sgaddr *sg,
 
 	/* PIM enabled on interface? */
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		if (PIM_DEBUG_EVENTS)
 			zlog_debug("%s:%pSG Expected pim interface setup for %s",
 				   __func__, sg, ifp->name);
@@ -1236,7 +1252,7 @@ void pim_ifchannel_local_membership_del(struct interface *ifp, pim_sgaddr *sg)
 
 	/* PIM enabled on interface? */
 	pim_ifp = ifp->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 	if (!pim_ifp->pim_enable)
 		return;
@@ -1406,7 +1422,7 @@ void pim_ifchannel_scan_forward_start(struct interface *new_ifp)
 		struct pim_interface *loop_pim_ifp = ifp->info;
 		struct pim_ifchannel *ch;
 
-		if (!loop_pim_ifp)
+		if (!loop_pim_ifp->multicast_enable)
 			continue;
 
 		if (new_pim_ifp == loop_pim_ifp)

@@ -80,7 +80,7 @@ void pim_register_stop_send(struct interface *ifp, pim_sgaddr *sg, pim_addr src,
 			     PIM_MSG_TYPE_REG_STOP, false);
 
 	pinfo = (struct pim_interface *)ifp->info;
-	if (!pinfo) {
+	if (!pinfo->multicast_enable) {
 		if (PIM_DEBUG_PIM_TRACE)
 			zlog_debug("%s: No pinfo!", __func__);
 		return;
@@ -243,7 +243,7 @@ struct in6_addr pim_register_get_unicast_v6_addr(struct pim_interface *p_ifp)
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		for (ALL_LIST_ELEMENTS(pim_ifp->sec_addr_list, node, nextnode,
@@ -282,7 +282,7 @@ void pim_register_send(const uint8_t *buf, int buf_size, pim_addr src,
 		return;
 	}
 	pinfo = (struct pim_interface *)ifp->info;
-	if (!pinfo) {
+	if (!pinfo->multicast_enable) {
 		if (PIM_DEBUG_PIM_REG)
 			zlog_debug(
 				"%s: Interface: %s not configured for pim to transmit on!",
@@ -337,7 +337,7 @@ void pim_null_register_send(struct pim_upstream *up)
 	pim_addr src;
 
 	pim_ifp = up->rpf.source_nexthop.interface->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		if (PIM_DEBUG_PIM_TRACE)
 			zlog_debug(
 				"%s: Cannot send null-register for %s no valid iif",
@@ -388,7 +388,7 @@ void pim_null_register_send(struct pim_upstream *up)
 	struct ipv6_ph ph;
 
 	pim_ifp = up->rpf.source_nexthop.interface->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		if (PIM_DEBUG_PIM_TRACE)
 			zlog_debug(
 				"Cannot send null-register for %s no valid iif",
@@ -735,7 +735,7 @@ void pim_reg_del_on_couldreg_fail(struct interface *ifp)
 	struct pim_instance *pim;
 	struct pim_upstream *up;
 
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	pim = pim_ifp->pim;

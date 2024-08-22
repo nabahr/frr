@@ -162,14 +162,14 @@ int pim_mroute_msg_nocache(int fd, struct interface *ifp, const kernmsg *msg)
 	sg.grp = msg->msg_im_dst;
 
 
-	if (!pim_ifp || !pim_ifp->pim_enable) {
+	if (!pim_ifp->multicast_enable || !pim_ifp->pim_enable) {
 		if (PIM_DEBUG_MROUTE)
-			zlog_debug(
-				"%s: %s on interface, dropping packet to %pSG",
-				ifp->name,
-				!pim_ifp ? "Multicast not enabled"
-					 : "PIM not enabled",
-				&sg);
+			zlog_debug("%s: %s on interface, dropping packet to %pSG",
+				   ifp->name,
+				   !pim_ifp->multicast_enable
+					   ? "Multicast not enabled"
+					   : "PIM not enabled",
+				   &sg);
 		return 0;
 	}
 
@@ -337,10 +337,11 @@ int pim_mroute_msg_wholepkt(int fd, struct interface *ifp, const char *buf,
 
 	pim_ifp = up->rpf.source_nexthop.interface->info;
 
-	rpg = pim_ifp ? RP(pim_ifp->pim, sg.grp) : NULL;
+	rpg = pim_ifp->multicast_enable ? RP(pim_ifp->pim, sg.grp)
+						: NULL;
 
-	if ((pim_rpf_addr_is_inaddr_any(rpg)) || (!pim_ifp) ||
-	    (!(PIM_I_am_DR(pim_ifp)))) {
+	if ((pim_rpf_addr_is_inaddr_any(rpg)) ||
+	    (!pim_ifp->multicast_enable) || (!(PIM_I_am_DR(pim_ifp)))) {
 		if (PIM_DEBUG_MROUTE) {
 			zlog_debug("%s: Failed Check send packet", __func__);
 		}
@@ -404,7 +405,7 @@ int pim_mroute_msg_wrongvif(int fd, struct interface *ifp, const kernmsg *msg)
 	}
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		if (PIM_DEBUG_MROUTE)
 			zlog_debug(
 				"%s: WRONGVIF (S,G)=%pSG multicast not enabled on interface %s",
@@ -524,7 +525,7 @@ int pim_mroute_msg_wrvifwhole(int fd, struct interface *ifp, const char *buf,
 
 		/* No RPF or No RPF interface or No mcast on RPF interface */
 		if (!rpf || !rpf->source_nexthop.interface ||
-		    !rpf->source_nexthop.interface->info)
+		    !((struct pim_interface *)rpf->source_nexthop.interface->info)->multicast_enable)
 			return 0;
 
 		/*
@@ -661,7 +662,12 @@ static int process_igmp_packet(struct pim_instance *pim, const char *buf,
 	 */
 	ifp = if_lookup_by_index(ifindex, pim->vrf->vrf_id);
 
-	if (!ifp || !ifp->info)
+	if (!ifp)
+		return 0;
+
+	pim_ifp = ifp->info;
+
+	if (!pim_ifp->multicast_enable)
 		return 0;
 
 	connected_src = pim_if_connected_to_source(ifp, ip_hdr->ip_src);
@@ -675,7 +681,6 @@ static int process_igmp_packet(struct pim_instance *pim, const char *buf,
 		return 0;
 	}
 
-	pim_ifp = ifp->info;
 	ifaddr = connected_src ? connected_src->u.prefix4
 			       : pim_ifp->primary_address;
 	igmp = pim_igmp_sock_lookup_ifaddr(pim_ifp->gm_socket_list, ifaddr);
@@ -1030,7 +1035,7 @@ bool pim_mroute_allow_iif_in_oil(struct channel_oil *c_oil,
 	if (!ifp_out)
 		return false;
 	pim_ifp = ifp_out->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return false;
 	if ((c_oil->oif_flags[oif_index] & PIM_OIF_FLAG_PROTO_GM) &&
 	    PIM_I_am_DR(pim_ifp))
@@ -1152,7 +1157,7 @@ static int pim_upstream_get_mroute_iif(struct channel_oil *c_oil,
 		}
 		if (ifp) {
 			pim_ifp = (struct pim_interface *)ifp->info;
-			if (pim_ifp)
+			if (pim_ifp->multicast_enable)
 				iif = pim_ifp->mroute_vif_index;
 		}
 	}

@@ -289,7 +289,11 @@ int pim_assert_recv(struct interface *ifp, struct pim_neighbor *neigh,
 	msg_metric.ip_address = src_addr;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return 0;
+	}
 
 	if (pim_ifp->pim_passive_enable) {
 		if (PIM_DEBUG_PIM_PACKETS)
@@ -420,7 +424,7 @@ static int pim_assert_do(struct pim_ifchannel *ch,
 		return -1;
 	}
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		if (PIM_DEBUG_PIM_TRACE)
 			zlog_debug(
 				"%s: channel %s pim not enabled on interface: %s",
@@ -573,10 +577,10 @@ int assert_action_a1(struct pim_ifchannel *ch)
 	struct pim_interface *pim_ifp;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: (S,G)=%s multicast not enabled on interface %s",
 			  __func__, ch->sg_str, ifp->name);
-		return -1; /* must return since pim_ifp is used below */
+		return -1;
 	}
 
 	/* Switch to I_AM_WINNER before performing action_a3 below */

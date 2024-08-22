@@ -900,7 +900,7 @@ void pim_show_neighbors_secondary(struct pim_instance *pim, struct vty *vty)
 
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (pim_ifp->pim_sock_fd < 0)
@@ -1220,7 +1220,7 @@ void pim_show_statistics(struct pim_instance *pim, struct vty *vty,
 		if (ifname && strcmp(ifname, ifp->name))
 			continue;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (!uj) {
@@ -1737,7 +1737,7 @@ void pim_show_join(struct pim_instance *pim, struct vty *vty, pim_sgaddr *sg,
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb) {
@@ -1811,7 +1811,7 @@ void pim_show_jp_agg_list(struct pim_instance *pim, struct vty *vty)
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		for (ALL_LIST_ELEMENTS_RO(pim_ifp->pim_neighbor_list, n_node,
@@ -1889,7 +1889,7 @@ void pim_show_membership(struct pim_instance *pim, struct vty *vty, bool uj)
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb) {
@@ -2064,7 +2064,7 @@ void pim_show_channel(struct pim_instance *pim, struct vty *vty, bool uj)
 	/* scan per-interface (S,G) state */
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb) {
@@ -2178,7 +2178,7 @@ void pim_show_interfaces(struct pim_instance *pim, struct vty *vty, bool mlag,
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (mlag == true && pim_ifp->activeactive == false)
@@ -2305,7 +2305,7 @@ void pim_show_interfaces_single(struct pim_instance *pim, struct vty *vty,
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (mlag == true && pim_ifp->activeactive == false)
@@ -2778,7 +2778,7 @@ static int pim_print_json_pnc_cache_walkcb(struct hash_bucket *backet,
 		if (ifp)
 			pim_ifp = ifp->info;
 
-		if (pim_ifp && pim_ifp->pim_enable)
+		if (pim_ifp && pim_ifp->multicast_enable && pim_ifp->pim_enable)
 			pim_enable = true;
 
 		json_object_boolean_add(json_ifp, "pimEnabled", pim_enable);
@@ -2963,7 +2963,7 @@ void pim_show_neighbors_single(struct pim_instance *pim, struct vty *vty,
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (pim_ifp->pim_sock_fd < 0)
@@ -3162,7 +3162,7 @@ void pim_show_neighbors(struct pim_instance *pim, struct vty *vty,
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (pim_ifp->pim_sock_fd < 0)
@@ -3443,7 +3443,7 @@ void show_multicast_interfaces(struct pim_instance *pim, struct vty *vty,
 
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		memset(&vreq, 0, sizeof(vreq));
@@ -4168,7 +4168,7 @@ void clear_mroute(struct pim_instance *pim)
 		struct pim_interface *pim_ifp = ifp->info;
 		struct pim_ifchannel *ch;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		/* deleting all ifchannels */
@@ -4214,7 +4214,7 @@ void clear_pim_statistics(struct pim_instance *pim)
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		struct pim_interface *pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		pim_ifp->pim_ifstat_bsm_cfg_miss = 0;
@@ -4236,7 +4236,7 @@ int clear_pim_interface_traffic(const char *vrf, struct vty *vty)
 	FOR_ALL_INTERFACES (v, ifp) {
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		pim_ifp->pim_ifstat_hello_recv = 0;
@@ -4966,7 +4966,7 @@ void pim_show_interface_traffic(struct pim_instance *pim, struct vty *vty,
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (uj) {
@@ -5056,7 +5056,7 @@ void pim_show_interface_traffic_single(struct pim_instance *pim,
 
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		found_ifname = 1;
@@ -5148,9 +5148,11 @@ int pim_show_interface_traffic_helper(const char *vrf, const char *if_name,
 void clear_pim_interfaces(struct pim_instance *pim)
 {
 	struct interface *ifp;
+	struct pim_interface *pim_ifp;
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
-		if (ifp->info)
+		pim_ifp = ifp->info;
+		if (pim_ifp->multicast_enable)
 			pim_neighbor_delete_all(ifp, "interface cleared");
 	}
 }

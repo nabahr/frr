@@ -333,7 +333,7 @@ bool pim_nht_bsr_rpf_check(struct pim_instance *pim, pim_addr bsr_addr,
 			ifp = if_lookup_by_index(znh->ifindex,
 						 pim->vrf->vrf_id);
 
-			if (!ifp || !ifp->info)
+			if (!ifp || !((struct pim_interface *)ifp->info)->multicast_enable)
 				continue;
 
 			if (if_is_loopback(ifp) && if_is_loopback(src_ifp))
@@ -397,7 +397,8 @@ bool pim_nht_bsr_rpf_check(struct pim_instance *pim, pim_addr bsr_addr,
 		}
 
 		ifp = if_lookup_by_index(nh->ifindex, pim->vrf->vrf_id);
-		if (!ifp || !ifp->info)
+		if (!ifp ||
+		    !((struct pim_interface *)ifp->info)->multicast_enable)
 			continue;
 
 		if (if_is_loopback(ifp) && if_is_loopback(src_ifp))
@@ -588,7 +589,8 @@ static int pim_ecmp_nexthop_search(struct pim_instance *pim,
 
 
 	// Current Nexthop is VALID, check to stay on the current path.
-	if (nexthop->interface && nexthop->interface->info &&
+	if (nexthop->interface &&
+	    ((struct pim_interface *)nexthop->interface->info)->multicast_enable &&
 	    (!pim_addr_is_any(nh_addr))) {
 		/* User configured knob to explicitly switch
 		   to new path is disabled or current path
@@ -695,7 +697,7 @@ static int pim_ecmp_nexthop_search(struct pim_instance *pim,
 
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp || !pim_ifp->pim_enable) {
+		if (!pim_ifp->multicast_enable || !pim_ifp->pim_enable) {
 			if (PIM_DEBUG_PIM_NHT)
 				zlog_debug(
 					"%s: pim not enabled on input interface %s(%s) (ifindex=%d, RPF for source %pPA)",
@@ -869,7 +871,7 @@ void pim_nexthop_update(struct vrf *vrf, struct prefix *match,
 					   nhr->metric);
 			}
 
-			if (!ifp->info) {
+			if (!((struct pim_interface *)ifp->info)->multicast_enable) {
 				/*
 				 * Though Multicast is not enabled on this
 				 * Interface store it in database otheriwse we
@@ -1036,7 +1038,7 @@ int pim_ecmp_nexthop_lookup(struct pim_instance *pim,
 
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp || !pim_ifp->pim_enable) {
+		if (!pim_ifp->multicast_enable || !pim_ifp->pim_enable) {
 			if (PIM_DEBUG_PIM_NHT)
 				zlog_debug(
 					"%s: pim not enabled on input interface %s(%s) (ifindex=%d, RPF for source %pPA)",

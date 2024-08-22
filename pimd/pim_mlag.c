@@ -62,7 +62,8 @@ static void pim_mlag_calculate_df_for_ifchannels(struct pim_upstream *up,
 
 	for (ALL_LIST_ELEMENTS(up->ifchannels, chnode, chnextnode, ch)) {
 		pim_ifp = (ch->interface) ? ch->interface->info : NULL;
-		if (!pim_ifp || !PIM_I_am_DualActive(pim_ifp))
+		if (!pim_ifp || !pim_ifp->multicast_enable ||
+		    !PIM_I_am_DualActive(pim_ifp))
 			continue;
 
 		if (is_df)
@@ -89,7 +90,8 @@ static void pim_mlag_inherit_mlag_flags(struct pim_upstream *up, bool is_df)
 
 	for (ALL_LIST_ELEMENTS(up->ifchannels, chnode, chnextnode, ch)) {
 		pim_ifp = (ch->interface) ? ch->interface->info : NULL;
-		if (!pim_ifp || !PIM_I_am_DualActive(pim_ifp))
+		if (!pim_ifp || !pim_ifp->multicast_enable ||
+		    !PIM_I_am_DualActive(pim_ifp))
 			continue;
 
 		for (ALL_LIST_ELEMENTS_RO(up->sources, listnode, child)) {
@@ -154,7 +156,7 @@ bool pim_mlag_up_df_role_update(struct pim_instance *pim,
 	 */
 	if (c_oil) {
 		vxlan_ifp = pim_vxlan_get_term_ifp(pim);
-		if (vxlan_ifp)
+		if (vxlan_ifp && vxlan_ifp->multicast_enable)
 			pim_channel_update_oif_mute(c_oil, vxlan_ifp);
 	}
 
@@ -986,7 +988,8 @@ void pim_mlag_deregister(void)
 
 void pim_if_configure_mlag_dualactive(struct pim_interface *pim_ifp)
 {
-	if (!pim_ifp || !pim_ifp->pim || pim_ifp->activeactive == true)
+	if (!pim_ifp->multicast_enable || !pim_ifp->pim ||
+	    pim_ifp->activeactive == true)
 		return;
 
 	if (PIM_DEBUG_MLAG)
@@ -1015,7 +1018,8 @@ void pim_if_configure_mlag_dualactive(struct pim_interface *pim_ifp)
 
 void pim_if_unconfigure_mlag_dualactive(struct pim_interface *pim_ifp)
 {
-	if (!pim_ifp || !pim_ifp->pim || pim_ifp->activeactive == false)
+	if (!pim_ifp->multicast_enable || !pim_ifp->pim ||
+	    pim_ifp->activeactive == false)
 		return;
 
 	if (PIM_DEBUG_MLAG)
@@ -1062,7 +1066,8 @@ void pim_instance_mlag_terminate(struct pim_instance *pim)
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		struct pim_interface *pim_ifp = ifp->info;
 
-		if (!pim_ifp || pim_ifp->activeactive == false)
+		if (!pim_ifp->multicast_enable ||
+		    pim_ifp->activeactive == false)
 			continue;
 
 		pim_if_unconfigure_mlag_dualactive(pim_ifp);

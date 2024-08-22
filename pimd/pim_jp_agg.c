@@ -104,7 +104,7 @@ pim_jp_agg_get_interface_upstream_switch_list(struct pim_rpf *rpf)
 	pim_ifp = ifp->info;
 
 	/* Old interface is pim disabled */
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return NULL;
 
 	for (ALL_LIST_ELEMENTS(pim_ifp->upstream_switch_list, node, nnode,
@@ -223,7 +223,7 @@ void pim_jp_agg_upstream_verification(struct pim_upstream *up, bool ignore)
 		if (ignore && ifp == up->rpf.source_nexthop.interface)
 			continue;
 
-		if (pim_ifp) {
+		if (pim_ifp->multicast_enable) {
 			struct pim_neighbor *neigh;
 			for (ALL_LIST_ELEMENTS_RO(pim_ifp->pim_neighbor_list,
 						  nnode, neigh)) {

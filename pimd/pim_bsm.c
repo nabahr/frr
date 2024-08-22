@@ -44,7 +44,7 @@ void pim_bsm_write_config(struct vty *vty, struct interface *ifp)
 {
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (pim_ifp) {
+	if (pim_ifp->multicast_enable) {
 		if (!pim_ifp->bsm_enable)
 			vty_out(vty, " no " PIM_AF_NAME " pim bsm\n");
 		if (!pim_ifp->ucast_bsm_accept)
@@ -664,7 +664,7 @@ static bool pim_bsm_send_intf(uint8_t *buf, int len, struct interface *ifp,
 
 	pim_ifp = ifp->info;
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		if (PIM_DEBUG_BSM)
 			zlog_debug("%s: Pim interface not available for %s",
 				   __func__, ifp->name);
@@ -878,7 +878,8 @@ static void pim_bsm_fwd_whole_sz(struct pim_instance *pim, uint8_t *buf,
 	dst_addr = qpim_all_pim_routers_addr;
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		pim_ifp = ifp->info;
-		if ((!pim_ifp) || (!pim_ifp->bsm_enable))
+		if ((!pim_ifp->multicast_enable) ||
+		    (!pim_ifp->bsm_enable))
 			continue;
 
 		/*
@@ -1270,7 +1271,7 @@ int pim_bsm_process(struct interface *ifp, pim_sgaddr *sg, uint8_t *buf,
 
 	/* BSM Packet acceptance validation */
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		if (PIM_DEBUG_BSM)
 			zlog_debug("%s: multicast not enabled on interface %s",
 				   __func__, ifp->name);

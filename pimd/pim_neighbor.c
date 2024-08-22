@@ -38,7 +38,11 @@ static void dr_election_by_addr(struct interface *ifp)
 	struct pim_neighbor *neigh;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	pim_ifp->pim_dr_addr = pim_ifp->primary_address;
 
@@ -60,7 +64,11 @@ static void dr_election_by_pri(struct interface *ifp)
 	uint32_t dr_pri;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	pim_ifp->pim_dr_addr = pim_ifp->primary_address;
 	dr_pri = pim_ifp->pim_dr_priority;
@@ -278,7 +286,11 @@ pim_neighbor_new(struct interface *ifp, pim_addr source_addr,
 
 	assert(ifp);
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return NULL;
+	}
 
 	neigh = XCALLOC(MTYPE_PIM_NEIGHBOR, sizeof(*neigh));
 
@@ -392,10 +404,16 @@ struct pim_neighbor *pim_neighbor_find_by_secondary(struct interface *ifp,
 	struct pim_neighbor *neigh;
 	struct prefix *p;
 
-	if (!ifp || !ifp->info)
+	if (!ifp)
 		return NULL;
 
 	pim_ifp = ifp->info;
+
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return NULL;
+	}
 
 	for (ALL_LIST_ELEMENTS_RO(pim_ifp->pim_neighbor_list, node, neigh)) {
 		for (ALL_LIST_ELEMENTS_RO(neigh->prefix_list, pnode, p)) {
@@ -418,7 +436,7 @@ struct pim_neighbor *pim_neighbor_find(struct interface *ifp,
 		return NULL;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return NULL;
 
 	for (ALL_LIST_ELEMENTS_RO(pim_ifp->pim_neighbor_list, node, neigh)) {
@@ -446,7 +464,8 @@ struct pim_neighbor *pim_neighbor_find_if(struct interface *ifp)
 {
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (!pim_ifp || pim_ifp->pim_neighbor_list->count != 1)
+	if (!pim_ifp->multicast_enable ||
+	    pim_ifp->pim_neighbor_list->count != 1)
 		return NULL;
 
 	return listnode_head(pim_ifp->pim_neighbor_list);
@@ -470,7 +489,11 @@ pim_neighbor_add(struct interface *ifp, pim_addr source_addr,
 	}
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return NULL;
+	}
 
 	listnode_add(pim_ifp->pim_neighbor_list, neigh);
 
@@ -530,7 +553,11 @@ static uint16_t find_neighbors_next_highest_propagation_delay_msec(
 	uint16_t next_highest_delay_msec;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return 0;
+	}
 
 	next_highest_delay_msec = pim_ifp->pim_propagation_delay_msec;
 
@@ -554,7 +581,11 @@ static uint16_t find_neighbors_next_highest_override_interval_msec(
 	uint16_t next_highest_interval_msec;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return 0;
+	}
 
 	next_highest_interval_msec = pim_ifp->pim_override_interval_msec;
 
@@ -576,7 +607,11 @@ void pim_neighbor_delete(struct interface *ifp, struct pim_neighbor *neigh,
 	struct pim_interface *pim_ifp;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	zlog_notice("PIM NEIGHBOR DOWN: neighbor %pPA on interface %s: %s",
 		    &neigh->source_addr, ifp->name, delete_message);
@@ -645,7 +680,11 @@ void pim_neighbor_delete_all(struct interface *ifp, const char *delete_message)
 	struct pim_neighbor *neigh;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	for (ALL_LIST_ELEMENTS(pim_ifp->pim_neighbor_list, neigh_node,
 			       neigh_nextnode, neigh)) {
@@ -689,7 +728,11 @@ static void delete_from_neigh_addr(struct interface *ifp,
 	struct pim_interface *pim_ifp;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	assert(addr_list);
 

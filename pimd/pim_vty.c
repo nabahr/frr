@@ -503,7 +503,7 @@ int pim_interface_config_write(struct vty *vty)
 				++writes;
 			}
 
-			if (ifp->info) {
+			if (((struct pim_interface *)ifp->info)->multicast_enable) {
 				pim_config_write(vty, writes, ifp, pim);
 			}
 			if_vty_config_end(vty);

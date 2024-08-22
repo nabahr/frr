@@ -132,7 +132,7 @@ static int pim_zebra_if_address_add(ZAPI_CALLBACK_ARGS)
 #endif
 
 	pim_if_addr_add(c);
-	if (pim_ifp) {
+	if (pim_ifp->multicast_enable) {
 		struct pim_instance *pim;
 
 		pim = pim_get_pim_instance(vrf_id);
@@ -217,7 +217,7 @@ void pim_zebra_update_all_interfaces(struct pim_instance *pim)
 		struct pim_iface_upstream_switch *us;
 		struct listnode *node;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		for (ALL_LIST_ELEMENTS_RO(pim_ifp->upstream_switch_list, node,

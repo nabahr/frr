@@ -63,6 +63,7 @@ struct pim_interface {
 	bool pim_passive_enable : 1;
 
 	bool gm_enable : 1;
+	bool multicast_enable : 1;
 
 	ifindex_t mroute_vif_index;
 	struct pim_instance *pim;
@@ -188,9 +189,9 @@ struct pim_interface {
 void pim_if_init(struct pim_instance *pim);
 void pim_if_terminate(struct pim_instance *pim);
 
-struct pim_interface *pim_if_new(struct interface *ifp, bool igmp, bool pim,
-				 bool ispimreg, bool is_vxlan_term);
-void pim_if_delete(struct interface *ifp);
+void pim_if_enable(struct interface *ifp, bool igmp, bool pim, bool ispimreg,
+		   bool is_vxlan_term);
+void pim_if_disable(struct interface *ifp);
 void pim_if_addr_add(struct connected *ifc);
 void pim_if_addr_del(struct connected *ifc, int force_prim_as_any);
 void pim_if_addr_add_all(struct interface *ifp);
@@ -249,7 +250,7 @@ bool pim_if_is_vrf_device(struct interface *ifp);
 int pim_if_ifchannel_count(struct pim_interface *pim_ifp);
 
 void pim_iface_init(void);
-void pim_pim_interface_delete(struct interface *ifp);
-void pim_gm_interface_delete(struct interface *ifp);
+void pim_pim_interface_disable(struct interface *ifp);
+void pim_gm_interface_disable(struct interface *ifp);
 
 #endif /* PIM_IFACE_H */

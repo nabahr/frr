@@ -24,8 +24,8 @@ static struct in_addr mtrace_primary_address(struct interface *ifp)
 	struct in_addr any;
 	struct pim_interface *pim_ifp;
 
-	if (ifp->info) {
-		pim_ifp = ifp->info;
+	pim_ifp = ifp->info;
+	if (pim_ifp->multicast_enable) {
 		return pim_ifp->primary_address;
 	}
 
@@ -733,8 +733,9 @@ int igmp_mtrace_recv_qry_req(struct gm_sock *igmp, struct ip *ip_hdr,
 	reached_source = false;
 
 	if (nh_addr.s_addr == INADDR_ANY) {
+		struct pim_interface *out_pim_ifp = out_ifp->info;
 		/* no pim? i.e. 7.5.3. No Previous Hop */
-		if (!out_ifp->info) {
+		if (!out_pim_ifp->multicast_enable) {
 			if (PIM_DEBUG_MTRACE)
 				zlog_debug("mtrace not found incoming if w/ pim");
 			mtrace_rsp_set_fwd_code(rspp,

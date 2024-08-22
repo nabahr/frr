@@ -83,7 +83,7 @@ bool tib_sg_gm_join(struct pim_instance *pim, pim_sgaddr sg,
 {
 	struct pim_interface *pim_oif = oif->info;
 
-	if (!pim_oif) {
+	if (!pim_oif->multicast_enable) {
 		if (PIM_DEBUG_GM_TRACE)
 			zlog_debug("%s: multicast not enabled on oif=%s?",
 				   __func__, oif->name);

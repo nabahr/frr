@@ -421,7 +421,7 @@ static void pim_vxlan_orig_mr_up_add(struct pim_vxlan_sg *vxlan_sg)
 		vxlan_sg->up = up;
 		term_ifp = pim_vxlan_get_term_ifp(pim);
 		/* mute termination device on origination mroutes */
-		if (term_ifp)
+		if (term_ifp && term_ifp->multicast_enable)
 			pim_channel_update_oif_mute(up->channel_oil,
 					term_ifp);
 		pim_vxlan_orig_mr_up_iif_update(vxlan_sg);
@@ -534,7 +534,8 @@ static bool pim_vxlan_orig_mr_add_is_ok(struct pim_vxlan_sg *vxlan_sg)
 		return false;
 
 	pim_ifp = (struct pim_interface *)vxlan_sg->iif->info;
-	if (!pim_ifp || (pim_ifp->mroute_vif_index < 0))
+	if (!pim_ifp->multicast_enable ||
+	    (pim_ifp->mroute_vif_index < 0))
 		return false;
 
 	return true;
@@ -960,8 +961,8 @@ void pim_vxlan_mlag_update(bool enable, bool peer_state, uint32_t role,
 	/* process changes */
 	if (vxlan_mlag.peerlink_rif)
 		pim_ifp = (struct pim_interface *)vxlan_mlag.peerlink_rif->info;
-	if ((vxlan_mlag.flags & PIM_VXLAN_MLAGF_ENABLED) &&
-			pim_ifp && (pim_ifp->mroute_vif_index > 0))
+	if ((vxlan_mlag.flags & PIM_VXLAN_MLAGF_ENABLED) && pim_ifp &&
+	    pim_ifp->multicast_enable && (pim_ifp->mroute_vif_index > 0))
 		pim_vxlan_set_peerlink_rif(pim, peerlink_rif);
 	else
 		pim_vxlan_set_peerlink_rif(pim, NULL);
@@ -1201,7 +1202,7 @@ void pim_vxlan_add_term_dev(struct pim_instance *pim,
 
 	/* enable pim on the term ifp */
 	pim_ifp = (struct pim_interface *)ifp->info;
-	if (pim_ifp) {
+	if (pim_ifp->multicast_enable) {
 		pim_ifp->pim_enable = true;
 		/* ifp is already oper up; activate it as a term dev */
 		if (pim_ifp->mroute_vif_index >= 0)
@@ -1211,8 +1212,7 @@ void pim_vxlan_add_term_dev(struct pim_instance *pim,
 		 * vxlan termination device
 		 */
 		pim_if_create_pimreg(pim);
-		(void)pim_if_new(ifp, false /*igmp*/, true /*pim*/,
-				 false /*pimreg*/, true /*vxlan_term*/);
+		pim_if_enable(ifp, false, true, false, true);
 	}
 }
 
@@ -1229,10 +1229,10 @@ void pim_vxlan_del_term_dev(struct pim_instance *pim)
 	pim->vxlan.term_if_cfg = NULL;
 
 	pim_ifp = (struct pim_interface *)ifp->info;
-	if (pim_ifp) {
+	if (pim_ifp->multicast_enable) {
 		pim_ifp->pim_enable = false;
 		if (!pim_ifp->gm_enable)
-			pim_if_delete(ifp);
+			pim_if_disable(ifp);
 	}
 }
 

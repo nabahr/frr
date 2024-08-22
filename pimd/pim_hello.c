@@ -110,7 +110,11 @@ int pim_hello_recv(struct interface *ifp, pim_addr src_addr, uint8_t *tlv_buf,
 		on_trace(__func__, ifp, src_addr);
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return 0;
+	}
 
 	if (pim_ifp->pim_passive_enable) {
 		if (PIM_DEBUG_PIM_PACKETS)
@@ -487,7 +491,11 @@ void pim_hello_require(struct interface *ifp)
 
 	pim_ifp = ifp->info;
 
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	if (PIM_IF_FLAG_TEST_HELLO_SENT(pim_ifp->flags))
 		return;

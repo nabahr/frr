@@ -62,11 +62,8 @@ void pim_if_terminate(struct pim_instance *pim)
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		struct pim_interface *pim_ifp = ifp->info;
-
-		if (!pim_ifp)
-			continue;
-
-		pim_if_delete(ifp);
+		if (pim_ifp->multicast_enable)
+			pim_if_disable(ifp);
 	}
 	return;
 }
@@ -104,29 +101,16 @@ static int pim_sec_addr_comp(const void *p1, const void *p2)
 	return 0;
 }
 
-struct pim_interface *pim_if_new(struct interface *ifp, bool gm, bool pim,
-				 bool ispimreg, bool is_vxlan_term)
+void pim_if_enable(struct interface *ifp, bool gm, bool pim, bool ispimreg,
+		   bool is_vxlan_term)
 {
-	struct pim_interface *pim_ifp;
+	int err = 0;
+	struct pim_interface *pim_ifp = ifp->info;
 
-	assert(ifp);
-	assert(!ifp->info);
+	if (pim_ifp->multicast_enable)
+		return;
 
-	pim_ifp = XCALLOC(MTYPE_PIM_INTERFACE, sizeof(*pim_ifp));
-
-	pim_ifp->pim = ifp->vrf->info;
-	pim_ifp->mroute_vif_index = -1;
-
-	pim_ifp->igmp_version = IGMP_DEFAULT_VERSION;
-	pim_ifp->mld_version = MLD_DEFAULT_VERSION;
-	pim_ifp->gm_default_robustness_variable =
-		GM_DEFAULT_ROBUSTNESS_VARIABLE;
-	pim_ifp->gm_default_query_interval = GM_GENERAL_QUERY_INTERVAL;
-	pim_ifp->gm_query_max_response_time_dsec =
-		GM_QUERY_MAX_RESPONSE_TIME_DSEC;
-	pim_ifp->gm_specific_query_max_response_time_dsec =
-		GM_SPECIFIC_QUERY_MAX_RESPONSE_TIME_DSEC;
-	pim_ifp->gm_last_member_query_count = GM_DEFAULT_ROBUSTNESS_VARIABLE;
+	pim_ifp->multicast_enable = true;
 
 	/* BSM config on interface: true by default */
 	pim_ifp->bsm_enable = true;
@@ -140,16 +124,6 @@ struct pim_interface *pim_if_new(struct interface *ifp, bool gm, bool pim,
 	 */
 	assert(pim_ifp->gm_query_max_response_time_dsec <
 	       pim_ifp->gm_default_query_interval);
-
-	pim_ifp->pim_enable = pim;
-	pim_ifp->pim_passive_enable = false;
-	pim_ifp->gm_enable = gm;
-
-	pim_ifp->gm_join_list = NULL;
-	pim_ifp->static_group_list = NULL;
-	pim_ifp->pim_neighbor_list = NULL;
-	pim_ifp->upstream_switch_list = NULL;
-	pim_ifp->pim_generation_id = 0;
 
 	/* list of struct gm_sock */
 	pim_igmp_if_init(pim_ifp, ifp);
@@ -165,32 +139,26 @@ struct pim_interface *pim_if_new(struct interface *ifp, bool gm, bool pim,
 
 	pim_ifp->sec_addr_list = list_new();
 	pim_ifp->sec_addr_list->del = (void (*)(void *))pim_sec_addr_free;
-	pim_ifp->sec_addr_list->cmp =
-		(int (*)(void *, void *))pim_sec_addr_comp;
+	pim_ifp->sec_addr_list->cmp = (int (*)(void *, void *))pim_sec_addr_comp;
 
-	pim_ifp->activeactive = false;
-
-	RB_INIT(pim_ifchannel_rb, &pim_ifp->ifchannel_rb);
-
-	ifp->info = pim_ifp;
+	pim_ifp->pim_enable = pim;
+	pim_ifp->gm_enable = gm;
 
 	pim_sock_reset(ifp);
 
-	pim_if_add_vif(ifp, ispimreg, is_vxlan_term);
-	pim_ifp->pim->mcast_if_count++;
+	err = pim_if_add_vif(ifp, ispimreg, is_vxlan_term);
 
-	return pim_ifp;
+	if (!err)
+		pim_ifp->pim->mcast_if_count++;
 }
 
-void pim_if_delete(struct interface *ifp)
+void pim_if_disable(struct interface *ifp)
 {
-	struct pim_interface *pim_ifp;
+	struct pim_interface *pim_ifp = ifp->info;
 
-	assert(ifp);
-	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable)
+		return;
 
-	pim_ifp->pim->mcast_if_count--;
 	if (pim_ifp->gm_join_list)
 		pim_if_gm_join_del_all(ifp);
 
@@ -204,7 +172,8 @@ void pim_if_delete(struct interface *ifp)
 	if (pim_ifp->pim_sock_fd >= 0)
 		pim_sock_delete(ifp, "Interface removed from configuration");
 
-	pim_if_del_vif(ifp);
+	if (pim_ifp->mroute_vif_index != -1 && !pim_if_del_vif(ifp))
+		pim_ifp->pim->mcast_if_count--;
 
 	pim_igmp_if_fini(pim_ifp);
 
@@ -216,9 +185,23 @@ void pim_if_delete(struct interface *ifp)
 		XFREE(MTYPE_TMP, pim_ifp->bfd_config.profile);
 
 	XFREE(MTYPE_PIM_INTERFACE, pim_ifp->boundary_oil_plist);
-	XFREE(MTYPE_PIM_INTERFACE, pim_ifp);
 
-	ifp->info = NULL;
+	pim_ifp->pim_enable = false;
+	pim_ifp->gm_enable = false;
+	pim_ifp->multicast_enable = false;
+
+	pim_ifp->mroute_vif_index = -1;
+	pim_ifp->pim_sock_fd = -1;
+
+	pim_ifp->igmp_version = IGMP_DEFAULT_VERSION;
+	pim_ifp->mld_version = MLD_DEFAULT_VERSION;
+	pim_ifp->gm_default_robustness_variable = GM_DEFAULT_ROBUSTNESS_VARIABLE;
+	pim_ifp->gm_default_query_interval = GM_GENERAL_QUERY_INTERVAL;
+	pim_ifp->gm_query_max_response_time_dsec =
+		GM_QUERY_MAX_RESPONSE_TIME_DSEC;
+	pim_ifp->gm_specific_query_max_response_time_dsec =
+		GM_SPECIFIC_QUERY_MAX_RESPONSE_TIME_DSEC;
+	pim_ifp->gm_last_member_query_count = GM_DEFAULT_ROBUSTNESS_VARIABLE;
 }
 
 void pim_if_update_could_assert(struct interface *ifp)
@@ -227,7 +210,11 @@ void pim_if_update_could_assert(struct interface *ifp)
 	struct pim_ifchannel *ch;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb) {
 		pim_ifchannel_update_could_assert(ch);
@@ -240,7 +227,11 @@ static void pim_if_update_my_assert_metric(struct interface *ifp)
 	struct pim_ifchannel *ch;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb) {
 		pim_ifchannel_update_my_assert_metric(ch);
@@ -252,7 +243,11 @@ static void pim_addr_change(struct interface *ifp)
 	struct pim_interface *pim_ifp;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	pim_if_dr_election(ifp); /* router's own DR Priority (addr) changes --
 				    Done TODO T30 */
@@ -439,7 +434,7 @@ static void detect_address_change(struct interface *ifp, int force_prim_as_any,
 	struct pim_interface *pim_ifp;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	if (detect_primary_address_change(ifp, force_prim_as_any, caller)) {
@@ -467,7 +462,7 @@ int pim_update_source_set(struct interface *ifp, pim_addr source)
 {
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		return PIM_IFACE_NOT_FOUND;
 	}
 
@@ -492,7 +487,7 @@ void pim_if_addr_add(struct connected *ifc)
 	ifp = ifc->ifp;
 	assert(ifp);
 	pim_ifp = ifp->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	if (!if_is_operative(ifp))
@@ -659,7 +654,7 @@ static void pim_if_addr_del_igmp(struct connected *ifc)
 		return;
 	}
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		/* IGMP not enabled on interface */
 		return;
 	}
@@ -684,7 +679,7 @@ static void pim_if_addr_del_pim(struct connected *ifc)
 		return;
 	}
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		/* PIM not enabled on interface */
 		return;
 	}
@@ -725,7 +720,7 @@ void pim_if_addr_del(struct connected *ifc, int force_prim_as_any)
 #if PIM_IPV == 6
 	struct pim_interface *pim_ifp = ifc->ifp->info;
 
-	if (pim_ifp &&
+	if (pim_ifp->multicast_enable &&
 	    (!IPV6_ADDR_CMP(&ifc->address->u.prefix6, &pim_ifp->ll_lowest) ||
 	     !IPV6_ADDR_CMP(&ifc->address->u.prefix6, &pim_ifp->ll_highest))) {
 		struct connected *cc;
@@ -776,7 +771,7 @@ void pim_if_addr_add_all(struct interface *ifp)
 
 
 	/* PIM/IGMP enabled ? */
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	frr_each (if_connected, ifp->connected, ifc) {
@@ -816,13 +811,15 @@ void pim_if_addr_del_all(struct interface *ifp)
 {
 	struct connected *ifc;
 	struct pim_instance *pim;
+	struct pim_interface *pim_ifp;
 
 	pim = ifp->vrf->info;
 	if (!pim)
 		return;
 
 	/* PIM/IGMP enabled ? */
-	if (!ifp->info)
+	pim_ifp = ifp->info;
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	frr_each_safe (if_connected, ifp->connected, ifc) {
@@ -841,9 +838,11 @@ void pim_if_addr_del_all(struct interface *ifp)
 void pim_if_addr_del_all_igmp(struct interface *ifp)
 {
 	struct connected *ifc;
+	struct pim_interface *pim_ifp;
 
 	/* PIM/IGMP enabled ? */
-	if (!ifp->info)
+	pim_ifp = ifp->info;
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	frr_each_safe (if_connected, ifp->connected, ifc) {
@@ -861,7 +860,8 @@ pim_addr pim_find_primary_addr(struct interface *ifp)
 	struct connected *ifc;
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (pim_ifp && !pim_addr_is_any(pim_ifp->update_source))
+	if (pim_ifp->multicast_enable &&
+	    !pim_addr_is_any(pim_ifp->update_source))
 		return pim_ifp->update_source;
 
 #if PIM_IPV == 6
@@ -973,7 +973,11 @@ int pim_if_add_vif(struct interface *ifp, bool ispimreg, bool is_vxlan_term)
 	pim_addr ifaddr;
 	unsigned char flags = 0;
 
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return -6;
+	}
 
 	if (pim_ifp->mroute_vif_index > 0) {
 		zlog_warn("%s: vif_index=%d > 0 on interface %s ifindex=%d",
@@ -1068,18 +1072,16 @@ struct interface *pim_if_find_by_vif_index(struct pim_instance *pim,
 					   ifindex_t vif_index)
 {
 	struct interface *ifp;
+	struct pim_interface *pim_ifp;
 
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
-		if (ifp->info) {
-			struct pim_interface *pim_ifp;
-			pim_ifp = ifp->info;
-
-			if (vif_index == pim_ifp->mroute_vif_index)
-				return ifp;
-		}
+		pim_ifp = ifp->info;
+		if (pim_ifp->multicast_enable &&
+		    vif_index == pim_ifp->mroute_vif_index)
+			return ifp;
 	}
 
-	return 0;
+	return NULL;
 }
 
 /*
@@ -1091,9 +1093,11 @@ int pim_if_find_vifindex_by_ifindex(struct pim_instance *pim, ifindex_t ifindex)
 	struct interface *ifp;
 
 	ifp = if_lookup_by_index(ifindex, pim->vrf->vrf_id);
-	if (!ifp || !ifp->info)
+	if (!ifp)
 		return -1;
 	pim_ifp = ifp->info;
+	if (!pim_ifp->multicast_enable)
+		return -1;
 
 	return pim_ifp->mroute_vif_index;
 }
@@ -1103,7 +1107,11 @@ int pim_if_lan_delay_enabled(struct interface *ifp)
 	struct pim_interface *pim_ifp;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return 0;
+	}
 	assert(pim_ifp->pim_number_of_nonlandelay_neighbors >= 0);
 
 	return pim_ifp->pim_number_of_nonlandelay_neighbors == 0;
@@ -1170,7 +1178,7 @@ struct pim_neighbor *pim_if_find_neighbor(struct interface *ifp, pim_addr addr)
 	assert(ifp);
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: multicast not enabled on interface %s", __func__,
 			  ifp->name);
 		return 0;
@@ -1205,7 +1213,11 @@ long pim_if_t_suppressed_msec(struct interface *ifp)
 	uint32_t ramount = 0;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return 0;
+	}
 
 	/* join suppression disabled ? */
 	if (pim_ifp->pim_can_disable_join_suppression)
@@ -1301,7 +1313,11 @@ static struct gm_join *gm_join_new(struct interface *ifp, pim_addr group_addr,
 	int join_fd;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return NULL;
+	}
 
 	join_fd = gm_join_sock(ifp->name, ifp->ifindex, group_addr, source_addr,
 			       pim_ifp);
@@ -1309,7 +1325,7 @@ static struct gm_join *gm_join_new(struct interface *ifp, pim_addr group_addr,
 		zlog_warn("%s: gm_join_sock() failure for " GM
 			  " group %pPAs source %pPAs on interface %s",
 			  __func__, &group_addr, &source_addr, ifp->name);
-		return 0;
+		return NULL;
 	}
 
 	ij = XCALLOC(MTYPE_PIM_IGMP_JOIN, sizeof(*ij));
@@ -1333,7 +1349,11 @@ static struct static_group *static_group_new(struct interface *ifp,
 	pim_sgaddr sg;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return NULL;
+	}
 
 	stgrp = XCALLOC(MTYPE_PIM_STATIC_GROUP, sizeof(*stgrp));
 
@@ -1359,7 +1379,7 @@ ferr_r pim_if_gm_join_add(struct interface *ifp, pim_addr group_addr,
 	struct gm_join *ij;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		return ferr_cfg_invalid("multicast not enabled on interface %s",
 					ifp->name);
 	}
@@ -1400,7 +1420,7 @@ int pim_if_gm_join_del(struct interface *ifp, pim_addr group_addr,
 	struct gm_join *ij;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: multicast not enabled on interface %s", __func__,
 			  ifp->name);
 		return -1;
@@ -1446,7 +1466,7 @@ static void pim_if_gm_join_del_all(struct interface *ifp)
 	struct gm_join *ij;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: multicast not enabled on interface %s", __func__,
 			  ifp->name);
 		return;
@@ -1466,7 +1486,7 @@ ferr_r pim_if_static_group_add(struct interface *ifp, pim_addr group_addr,
 	struct static_group *stgrp;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		return ferr_cfg_invalid("multicast not enabled on interface %s",
 					ifp->name);
 	}
@@ -1503,7 +1523,7 @@ int pim_if_static_group_del(struct interface *ifp, pim_addr group_addr,
 	pim_sgaddr sg;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: multicast not enabled on interface %s", __func__,
 			  ifp->name);
 		return -1;
@@ -1547,7 +1567,7 @@ static void pim_if_static_group_del_all(struct interface *ifp)
 	struct static_group *stgrp;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_warn("%s: multicast not enabled on interface %s", __func__,
 			  ifp->name);
 		return;
@@ -1582,7 +1602,11 @@ void pim_if_assert_on_neighbor_down(struct interface *ifp, pim_addr neigh_addr)
 	struct pim_ifchannel *ch;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb) {
 		/* Is (S,G,I) assert loser ? */
@@ -1625,7 +1649,7 @@ void pim_if_update_assert_tracking_desired(struct interface *ifp)
 	struct pim_ifchannel *ch;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	RB_FOREACH (ch, pim_ifchannel_rb, &pim_ifp->ifchannel_rb) {
@@ -1658,11 +1682,10 @@ void pim_if_create_pimreg(struct pim_instance *pim)
 		 * kerenl with the VRF's deletion.  It must be
 		 * recreated, so delete the old one first.
 		 */
-		if (pim->regiface->info)
-			pim_if_delete(pim->regiface);
+		if (((struct pim_interface *)pim->regiface->info)->multicast_enable)
+			pim_if_disable(pim->regiface);
 
-		pim_if_new(pim->regiface, false, false, true,
-			   false /*vxlan_term*/);
+		pim_if_enable(pim->regiface, false, false, true, false);
 
 		/*
 		 * On vrf moves we delete the interface if there
@@ -1737,11 +1760,11 @@ static int pim_ifp_create(struct interface *ifp)
 
 		pim_ifp = ifp->info;
 		/*
-		 * If we have a pim_ifp already and this is an if_add
+		 * If multicast is already enabled and this is an if_add
 		 * that means that we probably have a vrf move event
 		 * If that is the case, set the proper vrfness.
 		 */
-		if (pim_ifp)
+		if (pim_ifp->multicast_enable)
 			pim_ifp->pim = pim;
 		pim_if_addr_add_all(ifp);
 
@@ -1764,14 +1787,7 @@ static int pim_ifp_create(struct interface *ifp)
 	 * for pim or not.
 	 */
 	if (pim_if_is_vrf_device(ifp)) {
-		struct pim_interface *pim_ifp;
-
-		if (!ifp->info) {
-			pim_ifp = pim_if_new(ifp, false, false, false,
-					     false /*vxlan_term*/);
-			ifp->info = pim_ifp;
-		}
-
+		pim_if_enable(ifp, false, false, false, false);
 		pim_sock_add(ifp);
 	}
 
@@ -1807,11 +1823,11 @@ static int pim_ifp_up(struct interface *ifp)
 
 	pim_ifp = ifp->info;
 	/*
-	 * If we have a pim_ifp already and this is an if_add
+	 * If multicast is already enabled and this is an if_add
 	 * that means that we probably have a vrf move event
 	 * If that is the case, set the proper vrfness.
 	 */
-	if (pim_ifp)
+	if (pim_ifp->multicast_enable)
 		pim_ifp->pim = pim;
 
 	/*
@@ -1849,6 +1865,7 @@ static int pim_ifp_up(struct interface *ifp)
 
 static int pim_ifp_down(struct interface *ifp)
 {
+	struct pim_interface *pim_ifp = ifp->info;
 	if (PIM_DEBUG_ZEBRA) {
 		zlog_debug(
 			"%s: %s index %d vrf %s(%u) flags %ld metric %d mtu %d operative %d",
@@ -1870,12 +1887,12 @@ static int pim_ifp_down(struct interface *ifp)
 		  threads,
 		  and kills all neighbors.
 		*/
-		if (ifp->info) {
+		if (pim_ifp->multicast_enable) {
 			pim_sock_delete(ifp, "link down");
 		}
 	}
 
-	if (ifp->info) {
+	if (pim_ifp->multicast_enable) {
 		pim_if_del_vif(ifp);
 		pim_ifstat_reset(ifp);
 	}
@@ -1909,13 +1926,45 @@ static int pim_ifp_destroy(struct interface *ifp)
 
 static int pim_if_new_hook(struct interface *ifp)
 {
+	struct pim_interface *pim_ifp;
+
+	pim_ifp = XCALLOC(MTYPE_PIM_INTERFACE, sizeof(*pim_ifp));
+	memset(pim_ifp, 0, sizeof(*pim_ifp));
+
+	pim_ifp->pim = ifp->vrf->info;
+
+	pim_ifp->mroute_vif_index = -1;
+	pim_ifp->pim_sock_fd = -1;
+
+	pim_ifp->igmp_version = IGMP_DEFAULT_VERSION;
+	pim_ifp->mld_version = MLD_DEFAULT_VERSION;
+	pim_ifp->gm_default_robustness_variable = GM_DEFAULT_ROBUSTNESS_VARIABLE;
+	pim_ifp->gm_default_query_interval = GM_GENERAL_QUERY_INTERVAL;
+	pim_ifp->gm_query_max_response_time_dsec =
+		GM_QUERY_MAX_RESPONSE_TIME_DSEC;
+	pim_ifp->gm_specific_query_max_response_time_dsec =
+		GM_SPECIFIC_QUERY_MAX_RESPONSE_TIME_DSEC;
+	pim_ifp->gm_last_member_query_count = GM_DEFAULT_ROBUSTNESS_VARIABLE;
+
+	RB_INIT(pim_ifchannel_rb, &pim_ifp->ifchannel_rb);
+
+	ifp->info = pim_ifp;
+
 	return 0;
 }
 
 static int pim_if_delete_hook(struct interface *ifp)
 {
-	if (ifp->info)
-		pim_if_delete(ifp);
+	struct pim_interface *pim_ifp = ifp->info;
+	if (!pim_ifp)
+		return 0;
+
+	if (pim_ifp->multicast_enable)
+		pim_if_disable(ifp);
+
+	XFREE(MTYPE_PIM_INTERFACE, pim_ifp);
+
+	ifp->info = NULL;
 
 	return 0;
 }
@@ -1936,7 +1985,11 @@ static void pim_if_membership_clear(struct interface *ifp)
 	struct pim_interface *pim_ifp;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	if (pim_ifp->pim_enable && pim_ifp->gm_enable)
 		return;
@@ -1944,11 +1997,11 @@ static void pim_if_membership_clear(struct interface *ifp)
 	pim_ifchannel_membership_clear(ifp);
 }
 
-void pim_pim_interface_delete(struct interface *ifp)
+void pim_pim_interface_disable(struct interface *ifp)
 {
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	pim_ifp->pim_enable = false;
@@ -1964,15 +2017,15 @@ void pim_pim_interface_delete(struct interface *ifp)
 
 	if (!pim_ifp->gm_enable) {
 		pim_if_addr_del_all(ifp);
-		pim_if_delete(ifp);
+		pim_if_disable(ifp);
 	}
 }
 
-void pim_gm_interface_delete(struct interface *ifp)
+void pim_gm_interface_disable(struct interface *ifp)
 {
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	pim_ifp->gm_enable = false;
@@ -1986,5 +2039,5 @@ void pim_gm_interface_delete(struct interface *ifp)
 #endif
 
 	if (!pim_ifp->pim_enable)
-		pim_if_delete(ifp);
+		pim_if_disable(ifp);
 }

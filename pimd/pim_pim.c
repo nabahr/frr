@@ -105,7 +105,7 @@ void pim_sock_delete(struct interface *ifp, const char *delete_message)
 	zlog_info("PIM INTERFACE DOWN: on interface %s: %s", ifp->name,
 		  delete_message);
 
-	if (!ifp->info) {
+	if (!((struct pim_interface *)ifp->info)->multicast_enable) {
 		flog_err(EC_PIM_CONFIG,
 			 "%s: %s: but PIM not enabled on interface %s (!)",
 			 __func__, delete_message, ifp->name);
@@ -379,7 +379,7 @@ static void pim_sock_read(struct event *t)
 		 * it's the right interface because we bind to it
 		 */
 		ifp = if_lookup_by_index(ifindex, pim_ifp->pim->vrf->vrf_id);
-		if (!ifp || !ifp->info) {
+		if (!ifp || !((struct pim_interface *)ifp->info)->multicast_enable) {
 			if (PIM_DEBUG_PIM_PACKETS)
 				zlog_debug(
 					"%s: Received incoming pim packet on interface(%s:%d) not yet configured for pim",
@@ -423,9 +423,14 @@ static void pim_sock_read_on(struct interface *ifp)
 	struct pim_interface *pim_ifp;
 
 	assert(ifp);
-	assert(ifp->info);
 
 	pim_ifp = ifp->info;
+
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	if (PIM_DEBUG_PIM_TRACE_DETAIL) {
 		zlog_debug("Scheduling READ event on PIM socket fd=%d",
@@ -461,7 +466,7 @@ void pim_ifstat_reset(struct interface *ifp)
 	assert(ifp);
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		return;
 	}
 
@@ -495,9 +500,13 @@ void pim_sock_reset(struct interface *ifp)
 	struct pim_interface *pim_ifp;
 
 	assert(ifp);
-	assert(ifp->info);
 
 	pim_ifp = ifp->info;
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	pim_ifp->primary_address = pim_find_primary_addr(ifp);
 
@@ -941,7 +950,11 @@ int pim_sock_add(struct interface *ifp)
 	uint32_t old_genid;
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return -3;
+	}
 
 	if (pim_ifp->pim_sock_fd >= 0) {
 		if (PIM_DEBUG_PIM_PACKETS)

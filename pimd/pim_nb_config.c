@@ -68,11 +68,7 @@ static void pim_if_membership_refresh(struct interface *ifp)
 #endif
 
 	pim_ifp = ifp->info;
-	assert(pim_ifp);
-
-	if (!pim_ifp->pim_enable)
-		return;
-	if (!pim_ifp->gm_enable)
+	if (!pim_ifp->multicast_enable || !pim_ifp->pim_enable || !pim_ifp->gm_enable)
 		return;
 
 #if PIM_IPV == 6
@@ -136,17 +132,16 @@ static int pim_cmd_interface_add(struct interface *ifp)
 {
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (!pim_ifp)
-		pim_ifp = pim_if_new(ifp, false, true, false, false);
+	if (!pim_ifp->multicast_enable)
+		pim_if_enable(ifp, false, true, false, false);
 	else
 		pim_ifp->pim_enable = true;
 
 	pim_if_addr_add_all(ifp);
 	pim_upstream_nh_if_update(pim_ifp->pim, ifp);
 	pim_if_membership_refresh(ifp);
-
 	pim_if_create_pimreg(pim_ifp->pim);
-	return 1;
+	return NB_OK;
 }
 
 static int interface_pim_use_src_cmd_worker(struct interface *ifp,
@@ -327,8 +322,8 @@ static int pim_cmd_gm_start(struct interface *ifp)
 
 	pim_ifp = ifp->info;
 
-	if (!pim_ifp) {
-		pim_ifp = pim_if_new(ifp, true, false, false, false);
+	if (!pim_ifp->multicast_enable) {
+		pim_if_enable(ifp, true, false, false, false);
 		need_startup = 1;
 	} else {
 		if (!pim_ifp->gm_enable) {
@@ -336,7 +331,7 @@ static int pim_cmd_gm_start(struct interface *ifp)
 			need_startup = 1;
 		}
 	}
-	pim_if_create_pimreg(pim_ifp->pim);
+		pim_if_create_pimreg(pim_ifp->pim);
 
 	/* 'ip igmp' executed multiple times, with need_startup
 	 * avoid multiple if add all and membership refresh
@@ -362,10 +357,15 @@ static void igmp_sock_query_interval_reconfig(struct gm_sock *igmp)
 
 	assert(igmp);
 	assert(igmp->interface);
-	assert(igmp->interface->info);
 
 	ifp = igmp->interface;
 	pim_ifp = ifp->info;
+
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  ifp->name);
+		return;
+	}
 
 	if (PIM_DEBUG_GM_TRACE)
 		zlog_debug("%s: Querier %pPAs on %s reconfig query_interval=%d",
@@ -1672,19 +1672,13 @@ int routing_control_plane_protocols_control_plane_protocol_pim_address_family_re
  */
 int lib_interface_pim_address_family_create(struct nb_cb_create_args *args)
 {
-	struct interface *ifp;
-
 	switch (args->event) {
 	case NB_EV_VALIDATE:
 	case NB_EV_APPLY:
 	case NB_EV_ABORT:
 		break;
 	case NB_EV_PREPARE:
-		ifp = nb_running_get_entry(args->dnode, NULL, true);
-		if (ifp->info)
-			return NB_OK;
-
-		pim_if_new(ifp, false, false, false, false);
+		nb_running_get_entry(args->dnode, NULL, true);
 		break;
 	}
 
@@ -1704,10 +1698,10 @@ int lib_interface_pim_address_family_destroy(struct nb_cb_destroy_args *args)
 	case NB_EV_APPLY:
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			return NB_OK;
 
-		pim_pim_interface_delete(ifp);
+		pim_pim_interface_disable(ifp);
 	}
 
 	return NB_OK;
@@ -1744,18 +1738,13 @@ int lib_interface_pim_address_family_pim_enable_modify(struct nb_cb_modify_args 
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
 
 		if (yang_dnode_get_bool(args->dnode, NULL)) {
-			if (!pim_cmd_interface_add(ifp)) {
-				snprintf(args->errmsg, args->errmsg_len,
-					 "Could not enable PIM SM on interface %s",
-					 ifp->name);
-				return NB_ERR_INCONSISTENCY;
-			}
+			return pim_cmd_interface_add(ifp);
 		} else {
 			pim_ifp = ifp->info;
-			if (!pim_ifp)
+			if (!pim_ifp->multicast_enable)
 				return NB_ERR_INCONSISTENCY;
 
-			pim_pim_interface_delete(ifp);
+			pim_pim_interface_disable(ifp);
 		}
 		break;
 	}
@@ -1927,7 +1916,7 @@ void lib_interface_pim_address_family_bfd_apply_finish(
 	ifp = nb_running_get_entry(args->dnode, NULL, true);
 	pim_ifp = ifp->info;
 
-	if (!pim_ifp) {
+	if (!pim_ifp->multicast_enable) {
 		zlog_debug("Pim not enabled on this interface");
 		return;
 	}
@@ -2690,6 +2679,7 @@ int lib_interface_gmp_address_family_create(struct nb_cb_create_args *args)
 int lib_interface_gmp_address_family_destroy(struct nb_cb_destroy_args *args)
 {
 	struct interface *ifp;
+	struct pim_interface *pim_ifp;
 
 	switch (args->event) {
 	case NB_EV_VALIDATE:
@@ -2698,7 +2688,11 @@ int lib_interface_gmp_address_family_destroy(struct nb_cb_destroy_args *args)
 		break;
 	case NB_EV_APPLY:
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
-		pim_gm_interface_delete(ifp);
+		pim_ifp = ifp->info;
+		if (!pim_ifp->multicast_enable)
+			return NB_OK;
+
+		pim_gm_interface_disable(ifp);
 	}
 
 	return NB_OK;
@@ -2711,7 +2705,7 @@ int lib_interface_gmp_address_family_enable_modify(
 	struct nb_cb_modify_args *args)
 {
 	struct interface *ifp;
-	bool gm_enable;
+	struct pim_interface *pim_ifp;
 	int mcast_if_count;
 	const char *ifp_name;
 	const struct lyd_node *if_dnode;
@@ -2736,13 +2730,16 @@ int lib_interface_gmp_address_family_enable_modify(
 		break;
 	case NB_EV_APPLY:
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
-		gm_enable = yang_dnode_get_bool(args->dnode, NULL);
 
-		if (gm_enable)
+		if (yang_dnode_get_bool(args->dnode, NULL)) {
 			return pim_cmd_gm_start(ifp);
+		} else {
+			pim_ifp = ifp->info;
+			if (!pim_ifp->multicast_enable)
+				return NB_ERR_INCONSISTENCY;
 
-		else
-			pim_gm_interface_delete(ifp);
+			pim_gm_interface_disable(ifp);
+		}
 	}
 	return NB_OK;
 }
@@ -2766,7 +2763,7 @@ int lib_interface_gmp_address_family_igmp_version_modify(
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
 		pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			return NB_ERR_INCONSISTENCY;
 
 		igmp_version = yang_dnode_get_uint8(args->dnode, NULL);
@@ -2823,7 +2820,7 @@ int lib_interface_gmp_address_family_mld_version_modify(
 	case NB_EV_APPLY:
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			return NB_ERR_INCONSISTENCY;
 
 		pim_ifp->mld_version = yang_dnode_get_uint8(args->dnode, NULL);
@@ -2848,7 +2845,7 @@ int lib_interface_gmp_address_family_mld_version_destroy(
 	case NB_EV_APPLY:
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			return NB_ERR_INCONSISTENCY;
 
 		pim_ifp->mld_version = 2;
@@ -2890,7 +2887,7 @@ int lib_interface_gmp_address_family_query_interval_modify(
 	case NB_EV_APPLY:
 		ifp = nb_running_get_entry(args->dnode, NULL, true);
 		pim_ifp = ifp->info;
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			return NB_ERR_INCONSISTENCY;
 
 		query_interval = yang_dnode_get_uint16(args->dnode, NULL);

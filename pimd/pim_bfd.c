@@ -29,7 +29,7 @@ void pim_bfd_write_config(struct vty *vty, struct interface *ifp)
 {
 	struct pim_interface *pim_ifp = ifp->info;
 
-	if (!pim_ifp || !pim_ifp->bfd_config.enabled)
+	if (!pim_ifp->multicast_enable || !pim_ifp->bfd_config.enabled)
 		return;
 
 #if HAVE_BFDD == 0
@@ -104,7 +104,7 @@ void pim_bfd_reg_dereg_all_nbr(struct interface *ifp)
 	struct pim_neighbor *neigh = NULL;
 
 	pim_ifp = ifp->info;
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return;
 
 	for (ALL_LIST_ELEMENTS_RO(pim_ifp->pim_neighbor_list, node, neigh)) {

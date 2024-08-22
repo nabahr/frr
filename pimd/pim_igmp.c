@@ -110,7 +110,7 @@ void igmp_source_forward_reevaluate_all(struct pim_instance *pim)
 		struct gm_group *grp;
 		struct pim_ifchannel *ch, *ch_temp;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		/* scan igmp groups */
@@ -359,9 +359,13 @@ void pim_igmp_other_querier_timer_on(struct gm_sock *igmp)
 
 	assert(igmp);
 	assert(igmp->interface);
-	assert(igmp->interface->info);
 
 	pim_ifp = igmp->interface->info;
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  igmp->interface->name);
+		return;
+	}
 
 	if (igmp->t_other_querier_timer) {
 		/*
@@ -825,7 +829,11 @@ void pim_igmp_general_query_on(struct gm_sock *igmp)
 	 */
 	assert(!igmp->t_other_querier_timer);
 	pim_ifp = igmp->interface->info;
-	assert(pim_ifp);
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  igmp->interface->name);
+		return;
+	}
 
 	/*
 	  RFC 3376: 8.6. Startup Query Interval
@@ -898,9 +906,14 @@ static void pim_igmp_general_query(struct event *t)
 	igmp = EVENT_ARG(t);
 
 	assert(igmp->interface);
-	assert(igmp->interface->info);
 
 	pim_ifp = igmp->interface->info;
+
+	if (!pim_ifp->multicast_enable) {
+		zlog_warn("%s: multicast not enabled on interface %s", __func__,
+			  igmp->interface->name);
+		return;
+	}
 
 	if (pim_ifp->igmp_version == 3) {
 		query_buf_size = PIM_IGMP_BUFSIZE_WRITE;

@@ -173,8 +173,8 @@ int pim_static_del(struct pim_instance *pim, struct interface *iif,
 	struct listnode *node = NULL;
 	struct listnode *nextnode = NULL;
 	struct static_route *s_route = NULL;
-	struct pim_interface *pim_iif = iif ? iif->info : 0;
-	struct pim_interface *pim_oif = oif ? oif->info : 0;
+	struct pim_interface *pim_iif = iif ? iif->info : NULL;
+	struct pim_interface *pim_oif = oif ? oif->info : NULL;
 	ifindex_t iif_index = pim_iif ? pim_iif->mroute_vif_index : 0;
 	ifindex_t oif_index = pim_oif ? pim_oif->mroute_vif_index : 0;
 
@@ -250,7 +250,7 @@ int pim_static_write_mroute(struct pim_instance *pim, struct vty *vty,
 	struct static_route *sroute;
 	int count = 0;
 
-	if (!pim_ifp)
+	if (!pim_ifp->multicast_enable)
 		return 0;
 
 	for (ALL_LIST_ELEMENTS_RO(pim->static_routes, node, sroute)) {

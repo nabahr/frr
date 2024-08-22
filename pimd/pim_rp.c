@@ -354,7 +354,7 @@ static void pim_rp_check_interfaces(struct pim_instance *pim,
 	FOR_ALL_INTERFACES (pim->vrf, ifp) {
 		struct pim_interface *pim_ifp = ifp->info;
 
-		if (!pim_ifp)
+		if (!pim_ifp->multicast_enable)
 			continue;
 
 		if (pim_rp_check_interface_addrs(rp_info, pim_ifp)) {
