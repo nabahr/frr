@@ -10,6 +10,7 @@
 #define __PIM_AUTORP_H__
 
 #include <typesafe.h>
+#include "pim_cmd_common.h"
 
 #define AUTORP_VERSION		 1
 #define AUTORP_ANNOUNCEMENT_TYPE 1
@@ -82,6 +83,12 @@ struct pim_autorp_rp {
 	struct pim_autorp_rp_item list;
 };
 
+struct pim_autorp_group_or_list
+{
+	struct prefix grp;
+	char *plist;
+};
+
 struct pim_autorp {
 	/* backpointer to pim instance */
 	struct pim_instance *pim;
@@ -101,17 +108,15 @@ struct pim_autorp {
 	/* Flag enabling reading discovery packets */
 	bool do_discovery;
 
-	/* Flag enabling mapping agent (reading announcements and sending discovery)*/
+	/* Flag enabling mapping agent (reading announcements and sending discovery) */
 	/* bool do_mapping; */
 
 	/* List of RP's in received discovery packets */
 	struct pim_autorp_rp_head discovery_rp_list;
 
-	/* List of configured candidate RP's to send in announcement packets */
-	struct pim_autorp_rp_head candidate_rp_list;
-
-	/* List of announced RP's to send in discovery packets */
-	/* struct pim_autorp_rp_head mapping_rp_list; */
+	/* Candidate RP information to announce */
+	struct cand_addrsel cand_rp_addrsel;
+	struct pim_autorp_group_or_list cand_rp_grplist;
 
 	/* Packet parameters for sending announcement packets */
 	uint8_t announce_scope;
@@ -121,6 +126,9 @@ struct pim_autorp {
 	/* Pre-built announcement packet, only changes when configured RP's or packet parameters change */
 	uint8_t *annouce_pkt;
 	uint16_t annouce_pkt_sz;
+
+	/* List of announced RP's to send in discovery packets */
+	/* struct pim_autorp_rp_head mapping_rp_list; */
 
 	/* TODO: Packet parameters for sending discovery packets
 	 * int discovery_scope;
@@ -133,15 +141,8 @@ struct pim_autorp {
 #define AUTORP_RPLEN  6
 #define AUTORP_HDRLEN 8
 
-bool pim_autorp_rm_candidate_rp(struct pim_instance *pim, pim_addr rpaddr);
-void pim_autorp_add_candidate_rp_group(struct pim_instance *pim,
-				       pim_addr rpaddr, struct prefix group);
-bool pim_autorp_rm_candidate_rp_group(struct pim_instance *pim, pim_addr rpaddr,
-				      struct prefix group);
-void pim_autorp_add_candidate_rp_plist(struct pim_instance *pim,
-				       pim_addr rpaddr, const char *plist);
-bool pim_autorp_rm_candidate_rp_plist(struct pim_instance *pim, pim_addr rpaddr,
-				      const char *plist);
+void pim_autorp_prefix_list_update(struct pim_instance *pim, struct prefix_list *plist);
+void pim_autorp_candidate_rp_apply(struct pim_instance *pim);
 void pim_autorp_announce_scope(struct pim_instance *pim, uint8_t scope);
 void pim_autorp_announce_interval(struct pim_instance *pim, uint16_t interval);
 void pim_autorp_announce_holdtime(struct pim_instance *pim, int32_t holdtime);

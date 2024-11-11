@@ -24,6 +24,7 @@
 #include "pim_sock.h"
 #include "pim_instance.h"
 #include "pim_autorp.h"
+#include "pim_util.h"
 
 DEFINE_MTYPE_STATIC(PIMD, PIM_AUTORP, "PIM AutoRP info");
 DEFINE_MTYPE_STATIC(PIMD, PIM_AUTORP_RP, "PIM AutoRP advertised RP info");
@@ -66,21 +67,10 @@ static void pim_autorp_rplist_free(struct pim_autorp_rp_head *head)
 		pim_autorp_rp_free(rp);
 }
 
-static void pim_autorp_rplist_cfree(struct pim_autorp_rp_head *head)
-{
-	struct pim_autorp_rp *rp;
-
-	while ((rp = pim_autorp_rp_pop(head)))
-		XFREE(MTYPE_PIM_AUTORP_CRP, rp);
-}
-
 static void pim_autorp_free(struct pim_autorp *autorp)
 {
 	pim_autorp_rplist_free(&(autorp->discovery_rp_list));
 	pim_autorp_rp_fini(&(autorp->discovery_rp_list));
-
-	pim_autorp_rplist_cfree(&(autorp->candidate_rp_list));
-	pim_autorp_rp_fini(&(autorp->candidate_rp_list));
 }
 
 static bool pim_autorp_join_groups(struct interface *ifp)
@@ -609,271 +599,132 @@ static void autorp_announcement_off(struct pim_autorp *autorp)
 		zlog_debug("%s: AutoRP announcement sending disabled", __func__);
 }
 
-/* Pack the groups of the RP
- *   rp - Pointer to the RP
- *   buf - Pointer to the buffer where to start packing groups
- *   returns - Total group count packed
+/* Build the new announcement packet.
+ * If there is a packet to send, restart the send timer with a short wait
  */
-static uint8_t pim_autorp_new_announcement_rp_grps(struct pim_autorp_rp *rp,
-						   uint8_t *buf)
-{
-	struct prefix_list *plist;
-	struct prefix_list_entry *ple;
-	struct autorp_pkt_grp *grpp = (struct autorp_pkt_grp *)buf;
-	uint8_t cnt = 0;
-	in_addr_t taddr;
-
-	if (is_default_prefix(&(rp->grp))) {
-		/* No group so pack from the prefix list
-		 * The grplist should be set and the prefix list exist with at least one group address
-		 */
-		plist = prefix_list_lookup(AFI_IP, rp->grplist);
-		for (ple = plist->head; ple; ple = ple->next) {
-			taddr = ntohl(ple->prefix.u.prefix4.s_addr);
-			if ((taddr & 0xF0000000) == 0xE0000000) {
-				grpp->addr = ple->prefix.u.prefix4.s_addr;
-				grpp->masklen = ple->prefix.prefixlen;
-				grpp->negprefix =
-					(ple->type == PREFIX_PERMIT ? 0 : 1);
-				grpp->reserved = 0;
-
-				++cnt;
-				grpp = (struct autorp_pkt_grp
-						*)(buf +
-						   (sizeof(struct autorp_pkt_grp) *
-						    cnt));
-			}
-		}
-
-		return cnt;
-	}
-
-	/* Only one of group or prefix list should be defined */
-	grpp->addr = rp->grp.u.prefix4.s_addr;
-	grpp->masklen = rp->grp.prefixlen;
-	grpp->negprefix = 0;
-	grpp->reserved = 0;
-	return 1;
-}
-
-/* Pack a single candidate RP
- *   rp - Pointer to the RP to pack
- *   buf - Pointer to the buffer where to start packing the RP
- *   returns - Buffer pointer pointing to the start of the next RP
- */
-static uint8_t *pim_autorp_new_announcement_rp(struct pim_autorp_rp *rp,
-					       uint8_t *buf)
-{
-	struct autorp_pkt_rp *brp = (struct autorp_pkt_rp *)buf;
-
-	/* Since this is an in_addr, assume it's already the right byte order */
-	brp->addr = rp->addr.s_addr;
-	brp->pimver = PIM_V2;
-	brp->reserved = 0;
-	brp->grpcnt =
-		pim_autorp_new_announcement_rp_grps(rp,
-						    buf + sizeof(struct autorp_pkt_rp));
-	return buf + sizeof(struct autorp_pkt_rp) +
-	       (brp->grpcnt * sizeof(struct autorp_pkt_grp));
-}
-
-/* Pack the candidate RP's on the announcement packet
- *   autorp - Pointer to the AutoRP instance
- *   buf - Pointer to the buffer where to start packing the first RP
- *   bufsz - Output parameter to track size of packed bytes
- *   returns - Total count of RP's packed
- */
-static int pim_autorp_new_announcement_rps(struct pim_autorp *autorp,
-					   uint8_t *buf, uint16_t *bufsz)
-{
-	int cnt = 0;
-	struct pim_autorp_rp *rp;
-	/* Keep the original buffer pointer to calculate final size after packing */
-	uint8_t *obuf = buf;
-	struct prefix_list *plist;
-	struct prefix_list_entry *ple;
-	in_addr_t taddr;
-
-	frr_each_safe (pim_autorp_rp, &(autorp->candidate_rp_list), rp) {
-		/* We must have an rp address and either group or list in order to pack this RP, so skip this one */
-		if (pim_addr_is_any(rp->addr) ||
-		    (is_default_prefix(&(rp->grp)) && strlen(rp->grplist) == 0))
-			continue;
-
-		/* Group is net set, so list must be set, make sure the prefix list exists and has valid multicast groups */
-		if (is_default_prefix(&(rp->grp))) {
-			plist = prefix_list_lookup(AFI_IP, rp->grplist);
-			if (plist == NULL)
-				continue;
-			plist = prefix_list_lookup(AFI_IP, rp->grplist);
-			for (ple = plist->head; ple; ple = ple->next) {
-				taddr = ntohl(ple->prefix.u.prefix4.s_addr);
-				if ((taddr & 0xF0000000) == 0xE0000000)
-					break;
-			}
-
-			/* If we went through the entire list without finding a multicast prefix, then skip this RP */
-			if (ple == NULL)
-				continue;
-		}
-
-		/* Now we know for sure we will pack this RP, so count it */
-		++cnt;
-		/* This will return the buffer pointer at the location to start packing the next RP */
-		buf = pim_autorp_new_announcement_rp(rp, buf);
-	}
-
-	if (cnt > 0)
-		*bufsz = buf - obuf;
-
-	return cnt;
-}
-
-/* Build the new announcement packet. If there is a packet to send, restart the send timer with a short wait */
 static void pim_autorp_new_announcement(struct pim_instance *pim)
 {
 	struct pim_autorp *autorp = pim->autorp;
 	struct autorp_pkt_hdr *hdr;
+	struct autorp_pkt_rp *rp;
+	struct autorp_pkt_grp *grp;
 	int32_t holdtime;
+
+	if (!autorp)
+		return;
 
 	/* First disable any existing send timer */
 	autorp_announcement_off(autorp);
 
-	if (!autorp->annouce_pkt) {
-		/*
-		 * First time building, allocate the space
-		 * Allocate the max packet size of 65536 so we don't need to resize later.
-		 * This should be ok since we are only allocating the memory once for a single packet (potentially per vrf)
-		 */
-		autorp->annouce_pkt = XCALLOC(MTYPE_PIM_AUTORP_ANNOUNCE, 65536);
-	}
+	/* No candidate RP source configured yet */
+	if (!autorp->cand_rp_addrsel.run)
+		return;
 
-	autorp->annouce_pkt_sz = 0;
+	/* No group or prefix list configured yet */
+	if (is_default_prefix(&autorp->cand_rp_grplist.grp) && autorp->cand_rp_grplist.plist == NULL)
+		return;
 
+	/* If reading from a prefix list, make sure it exists */
+	if (autorp->cand_rp_grplist.plist && prefix_list_lookup(AFI_IP, autorp->cand_rp_grplist.plist) == NULL)
+		return;
+
+	/* Determine the holdtime for the packet */
 	holdtime = autorp->announce_holdtime;
 	if (holdtime == DEFAULT_ANNOUNCE_HOLDTIME)
 		holdtime = autorp->announce_interval * 3;
 	if (holdtime > UINT16_MAX)
 		holdtime = UINT16_MAX;
 
+	/*
+	 * First time building, allocate the space
+	 * We only ever pack one RP, so allocate the max for one RP and 255 groups so we don't need to
+	 * reallocate later. This should be ok since we are only allocating the memory once for a
+	 * single packet (potentially per vrf)
+	 */
+	if (!autorp->annouce_pkt)
+		autorp->annouce_pkt = XCALLOC(MTYPE_PIM_AUTORP_ANNOUNCE, sizeof(struct autorp_pkt_hdr) + sizeof(struct autorp_pkt_rp) + (UINT8_MAX * sizeof(struct autorp_pkt_grp)));
+	autorp->annouce_pkt_sz = 0;
+
 	hdr = (struct autorp_pkt_hdr *)autorp->annouce_pkt;
+	autorp->annouce_pkt_sz += sizeof(struct autorp_pkt_hdr);
+
 	hdr->version = AUTORP_VERSION;
 	hdr->type = AUTORP_ANNOUNCEMENT_TYPE;
 	hdr->holdtime = htons((uint16_t)holdtime);
 	hdr->reserved = 0;
-	hdr->rpcnt =
-		pim_autorp_new_announcement_rps(autorp,
-						autorp->annouce_pkt +
-							sizeof(struct autorp_pkt_hdr),
-						&(autorp->annouce_pkt_sz));
+	hdr->rpcnt = 1; /* We will only ever pack 1 rp */
 
-	/* Still need to add on the size of the header */
-	autorp->annouce_pkt_sz += sizeof(struct autorp_pkt_hdr);
+	rp = (struct autorp_pkt_rp *)(autorp->annouce_pkt + autorp->annouce_pkt_sz);
+	autorp->annouce_pkt_sz += sizeof(struct autorp_pkt_rp);
 
-	/* Only turn on the announcement timer if we have a packet to send */
-	if (autorp->annouce_pkt_sz >= MIN_AUTORP_PKT_SZ)
-		autorp_announcement_on(autorp);
-}
+	/* Since this is an in_addr, assume it's already the right byte order */
+	rp->addr = autorp->cand_rp_addrsel.run_addr.s_addr;
+	rp->pimver = PIM_V2;
+	rp->reserved = 0;
+	rp->grpcnt = 0; /* Start with 0 */
 
-bool pim_autorp_rm_candidate_rp(struct pim_instance *pim, pim_addr rpaddr)
-{
-	struct pim_autorp *autorp = pim->autorp;
-	struct pim_autorp_rp *rp;
-	struct pim_autorp_rp find = { .addr = rpaddr };
+	if (is_default_prefix(&(autorp->cand_rp_grplist.grp))) {
+		/* No group so pack from the prefix list */
+		struct prefix_list *plist;
+		struct prefix_list_entry *ple;
 
-	rp = pim_autorp_rp_find(&(autorp->candidate_rp_list),
-				(const struct pim_autorp_rp *)&find);
-	if (!rp)
-		return false;
+		plist = prefix_list_lookup(AFI_IP, autorp->cand_rp_grplist.plist);
+		for (ple = plist->head; ple; ple = ple->next) {
+			/* Only pack multicast groups */
+			if (pim_addr_is_multicast(pim_addr_from_prefix(&ple->prefix))) {
+				grp = (struct autorp_pkt_grp *)(autorp->annouce_pkt + autorp->annouce_pkt_sz);
+				autorp->annouce_pkt_sz += sizeof(struct autorp_pkt_grp);
 
-	pim_autorp_rp_del(&(autorp->candidate_rp_list), rp);
-	pim_autorp_rp_free(rp);
-	pim_autorp_new_announcement(pim);
-	return true;
-}
+				grp->addr = ple->prefix.u.prefix4.s_addr;
+				grp->masklen = ple->prefix.prefixlen;
+				grp->negprefix = (ple->type == PREFIX_PERMIT ? 0 : 1);
+				grp->reserved = 0;
+				rp->grpcnt += 1;
+			}
+		}
 
-void pim_autorp_add_candidate_rp_group(struct pim_instance *pim,
-				       pim_addr rpaddr, struct prefix group)
-{
-	struct pim_autorp *autorp = pim->autorp;
-	struct pim_autorp_rp *rp;
-	struct pim_autorp_rp find = { .addr = rpaddr };
+		/* Return if prefix list had no multicast groups */
+		if (rp->grpcnt == 0)
+			return;
+	} else {
+		grp = (struct autorp_pkt_grp *)(autorp->annouce_pkt + autorp->annouce_pkt_sz);
+		autorp->annouce_pkt_sz += sizeof(struct autorp_pkt_grp);
 
-	rp = pim_autorp_rp_find(&(autorp->candidate_rp_list),
-				(const struct pim_autorp_rp *)&find);
-	if (!rp) {
-		rp = XCALLOC(MTYPE_PIM_AUTORP_CRP, sizeof(*rp));
-		memset(rp, 0, sizeof(struct pim_autorp_rp));
-		rp->autorp = autorp;
-		memcpy(&(rp->addr), &rpaddr, sizeof(pim_addr));
-		pim_autorp_rp_add(&(autorp->candidate_rp_list), rp);
+		/* Only one of group or prefix list should be defined */
+		grp->addr = autorp->cand_rp_grplist.grp.u.prefix4.s_addr;
+		grp->masklen = autorp->cand_rp_grplist.grp.prefixlen;
+		grp->negprefix = 0;
+		grp->reserved = 0;
+		rp->grpcnt = 1;
 	}
 
-	apply_mask(&group);
-	prefix_copy(&(rp->grp), &group);
-	/* A new group prefix implies that any previous prefix list is now invalid */
-	rp->grplist[0] = '\0';
-
-	pim_autorp_new_announcement(pim);
+	/* Now we have a packet to send, so start the announcement timer */
+	autorp_announcement_on(autorp);
 }
 
-bool pim_autorp_rm_candidate_rp_group(struct pim_instance *pim, pim_addr rpaddr,
-				      struct prefix group)
+void pim_autorp_prefix_list_update(struct pim_instance *pim, struct prefix_list *plist)
 {
-	struct pim_autorp *autorp = pim->autorp;
-	struct pim_autorp_rp *rp;
-	struct pim_autorp_rp find = { .addr = rpaddr };
+	struct pim_autorp *autorp;
 
-	rp = pim_autorp_rp_find(&(autorp->candidate_rp_list),
-				(const struct pim_autorp_rp *)&find);
-	if (!rp)
-		return false;
+	if (pim == NULL || plist == NULL)
+		return;
 
-	memset(&(rp->grp), 0, sizeof(rp->grp));
-	pim_autorp_new_announcement(pim);
-	return true;
+	autorp = pim->autorp;
+	if (autorp == NULL)
+		return;
+
+	if (autorp->cand_rp_grplist.plist == NULL || plist->name == NULL)
+		return;
+
+	/* Check the candidate RP prefix list, if it matches, rebuild the announcement packet */
+	if (strmatch(autorp->cand_rp_grplist.plist, plist->name))
+		pim_autorp_new_announcement(pim);
 }
 
-void pim_autorp_add_candidate_rp_plist(struct pim_instance *pim,
-				       pim_addr rpaddr, const char *plist)
+void pim_autorp_candidate_rp_apply(struct pim_instance *pim)
 {
-	struct pim_autorp *autorp = pim->autorp;
-	struct pim_autorp_rp *rp;
-	struct pim_autorp_rp find = { .addr = rpaddr };
-
-	rp = pim_autorp_rp_find(&(autorp->candidate_rp_list),
-				(const struct pim_autorp_rp *)&find);
-	if (!rp) {
-		rp = XCALLOC(MTYPE_PIM_AUTORP_CRP, sizeof(*rp));
-		memset(rp, 0, sizeof(struct pim_autorp_rp));
-		rp->autorp = autorp;
-		memcpy(&(rp->addr), &rpaddr, sizeof(pim_addr));
-		pim_autorp_rp_add(&(autorp->candidate_rp_list), rp);
-	}
-
-	snprintf(rp->grplist, sizeof(rp->grplist), "%s", plist);
-	/* A new group prefix list implies that any previous group prefix is now invalid */
-	memset(&(rp->grp), 0, sizeof(rp->grp));
-	rp->grp.family = AF_INET;
-
+	/* Rebuild the announcement packet on any changes to candidate rp */
 	pim_autorp_new_announcement(pim);
-}
-
-bool pim_autorp_rm_candidate_rp_plist(struct pim_instance *pim, pim_addr rpaddr,
-				      const char *plist)
-{
-	struct pim_autorp *autorp = pim->autorp;
-	struct pim_autorp_rp *rp;
-	struct pim_autorp_rp find = { .addr = rpaddr };
-
-	rp = pim_autorp_rp_find(&(autorp->candidate_rp_list),
-				(const struct pim_autorp_rp *)&find);
-	if (!rp)
-		return false;
-
-	rp->grplist[0] = '\0';
-	pim_autorp_new_announcement(pim);
-	return true;
 }
 
 void pim_autorp_announce_scope(struct pim_instance *pim, uint8_t scope)
@@ -1009,7 +860,11 @@ void pim_autorp_init(struct pim_instance *pim)
 	autorp->announce_timer = NULL;
 	autorp->do_discovery = false;
 	pim_autorp_rp_init(&(autorp->discovery_rp_list));
-	pim_autorp_rp_init(&(autorp->candidate_rp_list));
+
+	cand_addrsel_clear(&autorp->cand_rp_addrsel);
+	autorp->cand_rp_grplist.grp.family = AF_INET;
+	autorp->cand_rp_grplist.grp.prefixlen = 0;
+	autorp->cand_rp_grplist.grp.u.prefix4.s_addr = 0;
 	autorp->announce_scope = DEFAULT_ANNOUNCE_SCOPE;
 	autorp->announce_interval = DEFAULT_ANNOUNCE_INTERVAL;
 	autorp->announce_holdtime = DEFAULT_ANNOUNCE_HOLDTIME;
@@ -1044,12 +899,7 @@ void pim_autorp_finish(struct pim_instance *pim)
 
 int pim_autorp_config_write(struct pim_instance *pim, struct vty *vty)
 {
-	struct pim_autorp_rp *rp;
 	struct pim_autorp *autorp = pim->autorp;
-	char interval_str[16] = { 0 };
-	char scope_str[16] = { 0 };
-	char holdtime_str[32] = { 0 };
-	char grp_str[64] = { 0 };
 	int writes = 0;
 
 	if (!autorp->do_discovery) {
@@ -1057,106 +907,78 @@ int pim_autorp_config_write(struct pim_instance *pim, struct vty *vty)
 		++writes;
 	}
 
-	if (autorp->announce_interval != DEFAULT_ANNOUNCE_INTERVAL) {
-		snprintf(interval_str, sizeof(interval_str), " interval %u",
-			 autorp->announce_interval);
-	}
-
-	if (autorp->announce_scope != DEFAULT_ANNOUNCE_SCOPE) {
-		snprintf(scope_str, sizeof(scope_str), " scope %u",
-			 autorp->announce_scope);
-	}
-
-	if (autorp->announce_holdtime != DEFAULT_ANNOUNCE_HOLDTIME) {
-		snprintf(holdtime_str, sizeof(holdtime_str), " holdtime %u",
-			 autorp->announce_holdtime);
-	}
-
-	if (strlen(interval_str) || strlen(scope_str) || strlen(holdtime_str)) {
-		vty_out(vty, " autorp announce%s%s%s\n", interval_str,
-			scope_str, holdtime_str);
+	if (autorp->announce_interval != DEFAULT_ANNOUNCE_INTERVAL || autorp->announce_scope != DEFAULT_ANNOUNCE_SCOPE || autorp->announce_holdtime != DEFAULT_ANNOUNCE_HOLDTIME) {
+		vty_out(vty, " autorp announce");
+		if (autorp->announce_interval != DEFAULT_ANNOUNCE_INTERVAL)
+			vty_out(vty, " interval %u", autorp->announce_interval);
+		if (autorp->announce_scope != DEFAULT_ANNOUNCE_SCOPE)
+			vty_out(vty, " scope %u", autorp->announce_scope);
+		if (autorp->announce_holdtime != DEFAULT_ANNOUNCE_HOLDTIME)
+			vty_out(vty, " holdtime %u", autorp->announce_holdtime);
+		vty_out(vty, "\n");
 		++writes;
 	}
 
-	frr_each_safe (pim_autorp_rp, &(autorp->candidate_rp_list), rp) {
-		/* Only print candidate RP's that have all the information needed to be announced */
-		if (pim_addr_is_any(rp->addr) ||
-		    (is_default_prefix(&(rp->grp)) && strlen(rp->grplist) == 0))
-			continue;
-
-		/* Don't make sure the prefix list has multicast groups, user may not have created it yet */
-
-		if (!is_default_prefix(&(rp->grp)))
-			snprintfrr(grp_str, sizeof(grp_str), "%pFX", &(rp->grp));
+	if (autorp->cand_rp_addrsel.cfg_enable) {
+		vty_out(vty, " autorp announce source");
+		switch (autorp->cand_rp_addrsel.cfg_mode) {
+		case CAND_ADDR_LO:
+			vty_out(vty, " loopback");
+			break;
+		case CAND_ADDR_ANY:
+			vty_out(vty, " any");
+			break;
+		case CAND_ADDR_IFACE:
+			vty_out(vty, " interface %s", autorp->cand_rp_addrsel.cfg_ifname);
+			break;
+		case CAND_ADDR_EXPLICIT:
+			vty_out(vty, " address %pPA", &autorp->cand_rp_addrsel.cfg_addr);
+			break;
+		}
+		if (!is_default_prefix(&(autorp->cand_rp_grplist.grp)))
+			vty_out(vty, " %pFX", &(autorp->cand_rp_grplist.grp));
 		else
-			snprintfrr(grp_str, sizeof(grp_str), "group-list %s",
-				   rp->grplist);
-
-		vty_out(vty, " autorp announce %pI4 %s\n", &(rp->addr), grp_str);
+			vty_out(vty, " group-list %s", autorp->cand_rp_grplist.plist);
+		vty_out(vty, "\n");
 		++writes;
 	}
 
 	return writes;
 }
 
-void pim_autorp_show_autorp(struct vty *vty, struct pim_instance *pim,
-			    json_object *json)
+void pim_autorp_show_autorp(struct vty *vty, struct pim_instance *pim, json_object *json)
 {
-	struct pim_autorp_rp *rp;
 	struct pim_autorp *autorp = pim->autorp;
 	struct ttable *tt = NULL;
 	char *table = NULL;
-	char grp_str[64] = { 0 };
-	char plist_str[64] = { 0 };
 	json_object *annouce_jobj;
 
 	/* Prepare table. */
 	tt = ttable_new(&ttable_styles[TTSTYLE_BLANK]);
-	ttable_add_row(tt, "RP address|group|prefix-list");
+	ttable_add_row(tt, "RP address|Group|Prefix-list");
 	tt->style.cell.rpad = 2;
 	tt->style.corner = '+';
 	ttable_restyle(tt);
 
-	frr_each_safe (pim_autorp_rp, &(autorp->candidate_rp_list), rp) {
-		if (!is_default_prefix(&(rp->grp)))
-			snprintfrr(grp_str, sizeof(grp_str), "%pFX", &(rp->grp));
-		else
-			snprintfrr(plist_str, sizeof(plist_str), "%s",
-				   rp->grplist);
-
-		ttable_add_row(tt, "%pI4|%s|%s", &(rp->addr), grp_str,
-			       plist_str);
-	}
+	if (!is_default_prefix(&autorp->cand_rp_grplist.grp))
+		ttable_add_row(tt, "%pI4|%pFX|%s", &(autorp->cand_rp_addrsel.run_addr), &autorp->cand_rp_grplist.grp, "-");
+	else
+		ttable_add_row(tt, "%pI4|%s|%s", &(autorp->cand_rp_addrsel.run_addr), "-", autorp->cand_rp_grplist.plist);
 
 	if (json) {
-		json_object_boolean_add(json, "discoveryEnabled",
-					autorp->do_discovery);
+		json_object_boolean_add(json, "discoveryEnabled", autorp->do_discovery);
 
 		annouce_jobj = json_object_new_object();
-		json_object_int_add(annouce_jobj, "scope",
-				    autorp->announce_scope);
-		json_object_int_add(annouce_jobj, "interval",
-				    autorp->announce_interval);
-		json_object_int_add(annouce_jobj, "holdtime",
-				    autorp->announce_holdtime);
-		json_object_object_add(annouce_jobj, "rpList",
-				       ttable_json_with_json_text(
-					       tt, "sss",
-					       "rpAddress|group|prefixList"));
-
+		json_object_int_add(annouce_jobj, "scope", autorp->announce_scope);
+		json_object_int_add(annouce_jobj, "interval", autorp->announce_interval);
+		json_object_int_add(annouce_jobj, "holdtime", autorp->announce_holdtime);
+		json_object_object_add(annouce_jobj, "rpList", ttable_json_with_json_text( tt, "sss", "rpAddress|group|prefixList"));
 		json_object_object_add(json, "announce", annouce_jobj);
 	} else {
-		vty_out(vty, "AutoRP Discovery is %sabled\n",
-			(autorp->do_discovery ? "en" : "dis"));
+		vty_out(vty, "AutoRP Discovery is %sabled\n", (autorp->do_discovery ? "en" : "dis"));
 		vty_out(vty, "AutoRP Candidate RPs\n");
-		vty_out(vty, "  interval %us, scope %u, holdtime %us\n",
-			autorp->announce_interval, autorp->announce_scope,
-			(autorp->announce_holdtime == DEFAULT_ANNOUNCE_HOLDTIME
-				 ? (autorp->announce_interval * 3)
-				 : autorp->announce_holdtime));
-
+		vty_out(vty, "  interval %us, scope %u, holdtime %us\n", autorp->announce_interval, autorp->announce_scope, (autorp->announce_holdtime == DEFAULT_ANNOUNCE_HOLDTIME ? (autorp->announce_interval * 3) : autorp->announce_holdtime));
 		vty_out(vty, "\n");
-
 		table = ttable_dump(tt, "\n");
 		vty_out(vty, "%s\n", table);
 		XFREE(MTYPE_TMP_TTABLE, table);
