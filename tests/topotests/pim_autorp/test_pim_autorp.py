@@ -195,7 +195,12 @@ def test_pim_autorp_discovery_static(request):
 
     step("Add static RP configuration to r2")
     rnode = tgen.routers()["r2"]
-    rnode.cmd("vtysh -c 'conf t' -c 'router pim' -c 'rp 10.10.76.3 224.0.0.0/4'")
+    rnode.vtysh_cmd(
+        """
+        conf term
+          router pim
+            rp 10.10.76.3 224.0.0.0/4
+        """)
 
     step("Verify static rp-info from r2")
     result = verify_pim_rp_info(
@@ -246,14 +251,13 @@ def test_pim_autorp_announce_cli(request):
     r1 = tgen.routers()["r1"]
     r1.vtysh_cmd(
         """
-        conf
-         router pim
-          autorp announce holdtime 90
-          autorp announce interval 120
-          autorp announce scope 5
-          autorp announce 10.2.3.4 225.0.0.0/24
-"""
-    )
+        conf term
+          router pim
+            autorp announce holdtime 90
+            autorp announce interval 120
+            autorp announce scope 5
+            autorp announce source address 10.10.76.1 225.0.0.0/24
+        """)
 
     expected = {
         "discoveryEnabled": True,
@@ -262,7 +266,7 @@ def test_pim_autorp_announce_cli(request):
             "interval": 120,
             "holdtime": 90,
             "rpList": [
-                {"rpAddress": "10.2.3.4", "group": "225.0.0.0/24", "prefixList": ""}
+                {"rpAddress": "10.10.76.1", "group": "225.0.0.0/24", "prefixList": "-"}
             ],
         },
     }
@@ -276,18 +280,18 @@ def test_pim_autorp_announce_cli(request):
 
     r1.vtysh_cmd(
         """
-        conf
-         router pim
-          autorp announce 10.2.3.4 group-list ListA
-"""
-    )
+        conf term
+          router pim
+            autorp announce source address 10.10.76.1 group-list ListA
+        """)
+
     expected = {
         "discoveryEnabled": True,
         "announce": {
             "scope": 5,
             "interval": 120,
             "holdtime": 90,
-            "rpList": [{"rpAddress": "10.2.3.4", "group": "", "prefixList": "ListA"}],
+            "rpList": [{"rpAddress": "10.10.76.1", "group": "-", "prefixList": "ListA"}],
         },
     }
 
@@ -310,17 +314,23 @@ def test_pim_autorp_announce_group(request):
 
     step("Add candidate RP configuration to r1")
     rnode = tgen.routers()["r1"]
-    rnode.cmd(
-        "vtysh -c 'conf t' -c 'router pim' -c 'send-rp-announce 10.10.76.1 224.0.0.0/4'"
-    )
+    rnode.vtysh_cmd(
+        """
+        conf term
+          router pim
+            announce source address 10.10.76.1 224.0.0.0/4
+        """)
     step("Verify Announcement sent data")
     # TODO: Verify AutoRP mapping agent receives candidate RP announcement
     # Mapping agent is not yet implemented
     # sleep(10)
     step("Change AutoRP Announcement packet parameters")
-    rnode.cmd(
-        "vtysh -c 'conf t' -c 'router pim' -c 'send-rp-announce scope 8 interval 10 holdtime 60'"
-    )
+    rnode.vtysh_cmd(
+        """
+        conf term
+          router pim
+            announce scope 8 interval 10 holdtime 60
+        """)
     step("Verify Announcement sent data")
     # TODO: Verify AutoRP mapping agent receives updated candidate RP announcement
     # Mapping agent is not yet implemented
