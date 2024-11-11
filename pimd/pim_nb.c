@@ -465,45 +465,73 @@ const struct frr_yang_module_info frr_pim_rp_info = {
 			}
 		},
 		{
-			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/announce-scope",
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp",
 			.cbs = {
-				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_announce_scope_modify,
-				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_announce_scope_destroy,
+				.create = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_create,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_destroy,
 			}
 		},
 		{
-			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/announce-interval",
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/scope",
 			.cbs = {
-				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_announce_interval_modify,
-				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_announce_interval_destroy,
+				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_scope_modify,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_scope_destroy,
 			}
 		},
 		{
-			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/announce-holdtime",
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/interval",
 			.cbs = {
-				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_announce_holdtime_modify,
-				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_announce_holdtime_destroy,
+				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_interval_modify,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_interval_destroy,
 			}
 		},
 		{
-			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp-list",
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/holdtime",
 			.cbs = {
-				.create = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_list_create,
-				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_list_destroy,
+				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_holdtime_modify,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_holdtime_destroy,
 			}
 		},
 		{
-			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp-list/group",
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/address",
 			.cbs = {
-				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_list_group_modify,
-				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_list_group_destroy,
+				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_modify,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_destroy,
 			}
 		},
 		{
-			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp-list/prefix-list",
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/interface",
 			.cbs = {
-				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_list_prefix_list_modify,
-				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_list_prefix_list_destroy,
+				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_modify,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_destroy,
+			}
+		},
+		{
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/if-loopback",
+			.cbs = {
+				.create = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_create,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_destroy,
+			}
+		},
+		{
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/if-any",
+			.cbs = {
+				.create = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_create,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_addrsel_destroy,
+			}
+		},
+		{
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/group",
+			.cbs = {
+				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_group_modify,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_group_destroy,
+			}
+		},
+		{
+			.xpath = "/frr-routing:routing/control-plane-protocols/control-plane-protocol/frr-pim:pim/address-family/frr-pim-rp:rp/auto-rp/candidate-rp/prefix-list",
+			.cbs = {
+				.modify = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_prefix_list_modify,
+				.destroy = routing_control_plane_protocols_control_plane_protocol_pim_address_family_rp_auto_rp_candidate_rp_prefix_list_destroy,
 			}
 		},
 		{

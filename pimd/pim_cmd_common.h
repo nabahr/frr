@@ -12,6 +12,55 @@
 struct pim_upstream;
 struct pim_instance;
 
+/* These types are used for doing a common candidate source address selection via the CLI
+ * used separately for Cand-RP, Cand-BSR, and AutoRP (candidate RP and mapping-agent).
+ * Sample CLI:
+ *  [source <address A.B.C.D | interface IFNAME | loopback$loopback | any$any>]
+ * Sample yang, for use with pim_nb_config.c yang_addrsel()
+ *  choice source-address-or-interface {
+ *    description "Source address.";
+ *    default if-loopback;
+ *    leaf address {
+ *      type inet:ip-address;
+ *    }
+ *    leaf interface {
+ *      type frr-interface:interface-ref;
+ *    }
+ *    leaf if-loopback {
+ *      type empty;
+ *    }
+ *    leaf if-any {
+ *      type empty;
+ *    }
+ *  }
+ *
+ * Configuration updates to the cand_addrsel object, setting enable, mode, ifname or cfg_addr.
+ * Use cand_addrsel_update to determine the run_addr based on the configuration and set run=true
+ * when the run_addr is valid, false otherwise. Return true if a change was made.
+ */
+enum cand_addr {
+	CAND_ADDR_LO = 0,
+	CAND_ADDR_ANY,
+	CAND_ADDR_IFACE,
+	CAND_ADDR_EXPLICIT,
+};
+struct cand_addrsel {
+	bool cfg_enable;
+	enum cand_addr cfg_mode : 8;
+
+	/* only valid for mode==CAND_ADDR_IFACE */
+	char cfg_ifname[IFNAMSIZ];
+
+	/* only valid for mode==CAND_ADDR_EXPLICIT */
+	pim_addr cfg_addr;
+
+	/* running state updated based on above on zebra events */
+	pim_addr run_addr;
+	bool run;
+};
+void cand_addrsel_clear(struct cand_addrsel *asel);
+bool cand_addrsel_update(struct cand_addrsel *asel, struct vrf *vrf);
+
 const char *pim_cli_get_vrf_name(struct vty *vty);
 int pim_process_join_prune_cmd(struct vty *vty, const char *jpi_str);
 int pim_process_no_join_prune_cmd(struct vty *vty);
@@ -35,16 +84,8 @@ int pim_process_rp_plist_cmd(struct vty *vty, const char *rp_str,
 			     const char *prefix_list);
 int pim_process_no_rp_plist_cmd(struct vty *vty, const char *rp_str,
 				const char *prefix_list);
-int pim_process_autorp_cmd(struct vty *vty);
-int pim_process_no_autorp_cmd(struct vty *vty);
-int pim_process_autorp_candidate_rp_cmd(struct vty *vty, bool no, const char *rpaddr_str,
-					const char *grp, const char *plist);
-int pim_process_autorp_announce_scope_int_cmd(struct vty *vty, bool no, const char *scope,
-					      const char *interval, const char *holdtime);
-int pim_process_autorp_send_rp_discovery_cmd(struct vty *vty, bool no, bool any, bool loopback,
-					     const char *ifname, const char *addr);
-int pim_process_autorp_send_rp_discovery_scope_int_cmd(struct vty *vty, bool no, const char *scope,
-						       const char *interval, const char *holdtime);
+int pim_process_autorp_candidate_rp_cmd(struct vty *vty, bool no, const char *addr, const char *intf, const char *loopback, const char *any, const char *grp, const char *plist);
+int pim_process_autorp_announce_scope_int_cmd(struct vty *vty, bool no, const char *scope, const char *interval, const char *holdtime);
 int pim_process_ip_pim_cmd(struct vty *vty);
 int pim_process_no_ip_pim_cmd(struct vty *vty);
 int pim_process_ip_pim_passive_cmd(struct vty *vty, bool enable);
