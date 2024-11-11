@@ -4584,20 +4584,24 @@ DEFPY (pim_autorp_discovery,
        "AutoRP\n"
        "Enable AutoRP discovery\n")
 {
-	if (no)
-		return pim_process_no_autorp_cmd(vty);
-	else
-		return pim_process_autorp_cmd(vty);
+	nb_cli_enqueue_change(vty, "./discovery-enabled", (no ? NB_OP_DESTROY : NB_OP_MODIFY), (no ? NULL : "true"));
+	return nb_cli_apply_changes(vty, "%s", FRR_PIM_AUTORP_XPATH);
 }
 
 DEFPY (pim_autorp_announce_rp,
        pim_autorp_announce_rp_cmd,
-       "[no] autorp announce A.B.C.D$rpaddr ![A.B.C.D/M$grp|group-list PREFIX_LIST$plist]",
+       "[no] autorp announce ![source <address A.B.C.D|interface IFNAME|loopback$loopback|any$any> <A.B.C.D/M$grp|group-list PREFIX_LIST$plist>]",
        NO_STR
        "AutoRP\n"
        "AutoRP Candidate RP announcement\n"
-       "AutoRP Candidate RP address\n"
-       "Group prefix\n"
+       "Specify RP source\n"
+       "Explicit IPv4 address\n"
+	   "IPv4 Address\n"
+	   "Interface (highest IP)\n"
+	   "Interface name\n"
+	   "Loopback (highest IP)\n"
+	   "Any (highest IP)\n"
+	   "Multicast group range\n"
        "Prefix list\n"
        "List name\n")
 {
@@ -4606,7 +4610,7 @@ DEFPY (pim_autorp_announce_rp,
 		return CMD_WARNING_CONFIG_FAILED;
 	}
 
-	return pim_process_autorp_candidate_rp_cmd(vty, no, rpaddr_str, grp_str, plist);
+	return pim_process_autorp_candidate_rp_cmd(vty, no, address_str, ifname, loopback, any, grp_str, plist);
 }
 
 DEFPY (pim_autorp_announce_scope_int,
@@ -4622,42 +4626,7 @@ DEFPY (pim_autorp_announce_scope_int,
        "Announcement holdtime\n"
        "Time in seconds\n")
 {
-	return pim_process_autorp_announce_scope_int_cmd(vty, no, scope_str, interval_str,
-							 holdtime_str);
-}
-
-DEFPY (pim_autorp_send_rp_discovery,
-       pim_autorp_send_rp_discovery_cmd,
-       "[no] autorp send-rp-discovery [source <address A.B.C.D | interface IFNAME | loopback$loopback | any$any>]",
-       NO_STR
-       "AutoRP\n"
-       "Enable AutoRP mapping agent\n"
-       "Specify AutoRP discovery source\n"
-       "Local address\n"
-       IP_ADDR_STR
-       "Local Interface (uses highest address)\n"
-       IFNAME_STR
-       "Highest loopback address (default)\n"
-       "Highest address of any interface\n")
-{
-	return pim_process_autorp_send_rp_discovery_cmd(vty, no, any, loopback, ifname, address_str);
-}
-
-DEFPY (pim_autorp_send_rp_discovery_scope_int,
-       pim_autorp_send_rp_discovery_scope_int_cmd,
-       "[no] autorp send-rp-discovery {scope (0-255) | interval (1-65535) | holdtime (0-65535)}",
-       NO_STR
-       "AutoRP\n"
-       "Enable AutoRP mapping agent\n"
-       "Packet scope (TTL)\n"
-       "TTL value\n"
-       "Discovery TX interval\n"
-       "Time in seconds\n"
-       "Announcement holdtime\n"
-       "Time in seconds\n")
-{
-	return pim_process_autorp_send_rp_discovery_scope_int_cmd(vty, no, scope_str, interval_str,
-								  holdtime_str);
+	return pim_process_autorp_announce_scope_int_cmd(vty, no, scope_str, interval_str, holdtime_str);
 }
 
 DEFPY (pim_bsr_candidate_bsr,

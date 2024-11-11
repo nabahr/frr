@@ -15,6 +15,7 @@
 #include "table.h"
 #include "pim_rp.h"
 #include "pim_msg.h"
+#include "pim_cmd_common.h"
 
 /* Defines */
 #define PIM_GBL_SZ_ID 0		    /* global scope zone id set to 0 */
@@ -56,29 +57,6 @@ enum bsr_state {
 	BSR_PENDING,
 	BSR_ELECTED,
 };
-
-enum cand_addr {
-	CAND_ADDR_LO = 0,
-	CAND_ADDR_ANY,
-	CAND_ADDR_IFACE,
-	CAND_ADDR_EXPLICIT,
-};
-
-/* used separately for Cand-RP, Cand-BSR, and AutoRP mapping agent */
-struct cand_addrsel {
-	bool cfg_enable;
-	enum cand_addr cfg_mode : 8;
-
-	/* only valid for mode==CAND_ADDR_IFACE */
-	char cfg_ifname[IFNAMSIZ];
-	/* only valid for mode==CAND_ADDR_EXPLICIT */
-	pim_addr cfg_addr;
-
-	/* running state updated based on above on zebra events */
-	pim_addr run_addr;
-	bool run;
-};
-
 
 PREDECL_DLIST(bsm_frags);
 PREDECL_RBTREE_UNIQ(cand_rp_groups);

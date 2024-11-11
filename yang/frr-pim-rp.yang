@@ -25,6 +25,10 @@ module frr-pim-rp {
     prefix "frr-interface";
   }
 
+  import frr-interface {
+    prefix "frr-interface";
+  }
+
   organization
     "FRRouting";
 
@@ -173,33 +177,46 @@ module frr-pim-rp {
           "Flag indicating if Auto RP discovery is enabled.";
       }
 
-      leaf announce-scope {
-        type uint8;
-        description
-          "The TTL of the C-RP Announcement packet.";
-      }
+      container candidate-rp {
+        presence
+          "Enable router to be a Candidate RP.";
 
-      leaf announce-interval {
-        type uint16;
         description
-          "The time between sending C-RP announcement packets (seconds).";
-      }
+          "Candidate RP settings";
 
-      leaf announce-holdtime {
-        type uint16;
-        description
-          "The hold time in seconds advertised in the announcement packet.";
-      }
-
-      list candidate-rp-list {
-        key "rp-address";
-        description
-          "A list of Candidate RP addresses.";
-
-        leaf rp-address {
-          type inet:ip-address;
+        leaf scope {
+          type uint8;
           description
-            "Specifies a candidate RP address.";
+            "The TTL of the C-RP Announcement packet.";
+        }
+
+        leaf interval {
+          type uint16;
+          description
+            "The time between sending C-RP announcement packets (seconds).";
+        }
+
+        leaf holdtime {
+          type uint16;
+          description
+            "The hold time in seconds advertised in the announcement packet.";
+        }
+
+        choice source-address-or-interface {
+          description "IP address to use for RP operation";
+          default if-loopback;
+          leaf address {
+            type inet:ip-address;
+          }
+          leaf interface {
+            type frr-interface:interface-ref;
+          }
+          leaf if-loopback {
+            type empty;
+          }
+          leaf if-any {
+            type empty;
+          }
         }
 
         choice group-or-prefix-list {
@@ -219,7 +236,7 @@ module frr-pim-rp {
             }
           }
         }
-      } // candidate-rp-list
+      } // candidate-rp
 
       container mapping-agent {
         leaf send-rp-discovery {
