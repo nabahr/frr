@@ -4592,30 +4592,33 @@ DEFPY (pim_autorp_discovery,
        "AutoRP\n"
        "Enable AutoRP discovery\n")
 {
-	if (no)
-		return pim_process_no_autorp_cmd(vty);
-	else
-		return pim_process_autorp_cmd(vty);
+	nb_cli_enqueue_change(vty, "./discovery-enabled", (no ? NB_OP_DESTROY : NB_OP_MODIFY), (no ? NULL : "true"));
+	return nb_cli_apply_changes(vty, "%s", FRR_PIM_AUTORP_XPATH);
 }
 
 DEFPY (pim_autorp_announce_rp,
        pim_autorp_announce_rp_cmd,
-       "[no] autorp announce A.B.C.D$rpaddr ![A.B.C.D/M$grp|group-list PREFIX_LIST$plist]",
+       "[no] autorp announce ![source <address A.B.C.D|interface IFNAME|loopback$loopback|any$any> <A.B.C.D/M$grp|group-list PREFIX_LIST$plist>]",
        NO_STR
        "AutoRP\n"
        "AutoRP Candidate RP announcement\n"
-       "AutoRP Candidate RP address\n"
-       "Group prefix\n"
+       "Specify RP source\n"
+       "Explicit IPv4 address\n"
+	   "IPv4 Address\n"
+	   "Interface (highest IP)\n"
+	   "Interface name\n"
+	   "Loopback (highest IP)\n"
+	   "Any (highest IP)\n"
+	   "Multicast group range\n"
        "Prefix list\n"
        "List name\n")
 {
-	return pim_process_autorp_candidate_rp_cmd(vty, no, rpaddr_str, (grp_str ? grp : NULL),
-						   plist);
+	return pim_process_autorp_candidate_rp_cmd(vty, no, address_str, ifname, loopback, any, grp_str, plist);
 }
 
 DEFPY (pim_autorp_announce_scope_int,
        pim_autorp_announce_scope_int_cmd,
-       "[no] autorp announce ![{scope (1-255) | interval (1-65535) | holdtime (0-65535)}]",
+       "[no] autorp announce {scope (1-255) | interval (1-65535) | holdtime (0-65535)}",
        NO_STR
        "AutoRP\n"
        "AutoRP Candidate RP announcement\n"
@@ -4626,9 +4629,7 @@ DEFPY (pim_autorp_announce_scope_int,
        "Announcement holdtime\n"
        "Time in seconds\n")
 {
-	return pim_process_autorp_announce_scope_int_cmd(vty, no, scope_str,
-							 interval_str,
-							 holdtime_str);
+	return pim_process_autorp_announce_scope_int_cmd(vty, no, scope_str, interval_str, holdtime_str);
 }
 
 DEFPY (pim_bsr_candidate_bsr,

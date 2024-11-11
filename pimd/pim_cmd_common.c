@@ -47,6 +47,91 @@
 #include "pim_util.h"
 #include "pim6_mld.h"
 
+
+static inline pim_addr if_highest_addr(pim_addr cur, struct interface *ifp)
+{
+	struct connected *connected;
+
+	frr_each (if_connected, ifp->connected, connected) {
+		pim_addr conn_addr;
+
+		if (connected->address->family != PIM_AF)
+			continue;
+
+		conn_addr = pim_addr_from_prefix(connected->address);
+		/* highest address */
+		if (pim_addr_cmp(conn_addr, cur) > 0)
+			cur = conn_addr;
+	}
+	return cur;
+}
+
+void cand_addrsel_clear(struct cand_addrsel *asel)
+{
+	if (asel == NULL)
+		return;
+
+	asel->run = false;
+	asel->run_addr = PIMADDR_ANY;
+}
+
+/* returns whether address or active changed */
+bool cand_addrsel_update(struct cand_addrsel *asel, struct vrf *vrf)
+{
+	bool is_any = false;
+	bool prev_run = asel->run;
+	struct interface *ifp = NULL;
+	pim_addr new_addr = PIMADDR_ANY;
+
+	if (!asel->cfg_enable)
+		goto out_disable;
+
+	switch (asel->cfg_mode) {
+	case CAND_ADDR_EXPLICIT:
+		new_addr = asel->cfg_addr;
+		ifp = if_lookup_address_local(&asel->cfg_addr, PIM_AF, vrf->vrf_id);
+		break;
+
+	case CAND_ADDR_IFACE:
+		ifp = if_lookup_by_name_vrf(asel->cfg_ifname, vrf);
+		if (ifp)
+			new_addr = if_highest_addr(PIMADDR_ANY, ifp);
+		break;
+
+	case CAND_ADDR_ANY:
+		is_any = true;
+		/* fallthru */
+	case CAND_ADDR_LO:
+		FOR_ALL_INTERFACES (vrf, ifp) {
+			if (!if_is_up(ifp))
+				continue;
+			if (is_any || if_is_loopback(ifp) || if_is_vrf(ifp))
+				new_addr = if_highest_addr(new_addr, ifp);
+		}
+		break;
+	}
+
+	if (ifp && !if_is_up(ifp))
+		goto out_disable;
+
+	if (pim_addr_is_any(new_addr))
+		goto out_disable;
+
+	/* nothing changed re. address (don't care about interface changes) */
+	if (asel->run && !pim_addr_cmp(asel->run_addr, new_addr))
+		return !prev_run;
+
+	asel->run = true;
+	asel->run_addr = new_addr;
+	return true;
+
+out_disable:
+	asel->run = false;
+	asel->run_addr = PIMADDR_ANY;
+
+	return prev_run;
+}
+
 /**
  * Get current node VRF name.
  *
@@ -606,163 +691,56 @@ int pim_process_no_rp_plist_cmd(struct vty *vty, const char *rp_str,
 	return nb_cli_apply_changes(vty, NULL);
 }
 
-int pim_process_autorp_cmd(struct vty *vty)
+int pim_process_autorp_candidate_rp_cmd(struct vty *vty, bool no, const char *addr, const char *intf, const char *loopback, const char *any, const char *grp, const char *plist)
 {
-	char xpath[XPATH_MAXLEN];
-
-	snprintf(xpath, sizeof(xpath), "%s/%s", FRR_PIM_AUTORP_XPATH,
-		 "discovery-enabled");
-
-	nb_cli_enqueue_change(vty, xpath, NB_OP_MODIFY, "true");
-
-	return nb_cli_apply_changes(vty, NULL);
-}
-
-int pim_process_no_autorp_cmd(struct vty *vty)
-{
-	char xpath[XPATH_MAXLEN];
-
-	snprintf(xpath, sizeof(xpath), "%s/%s", FRR_PIM_AUTORP_XPATH,
-		 "discovery-enabled");
-
-	nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
-
-	return nb_cli_apply_changes(vty, NULL);
-}
-
-int pim_process_autorp_candidate_rp_cmd(struct vty *vty, bool no,
-					const char *rpaddr_str,
-					const struct prefix_ipv4 *grp,
-					const char *plist)
-{
-	char xpath[XPATH_MAXLEN];
-	char grpstr[64];
-
+	/* Just take any "no" version of this command as disable the candidate rp */
 	if (no) {
-		if ((grp && !is_default_prefix((const struct prefix *)grp)) || plist) {
-			/* If any single values are set, only destroy those */
-			if (grp && !is_default_prefix((const struct prefix *)grp)) {
-				snprintfrr(xpath, sizeof(xpath),
-					   "%s/candidate-rp-list[rp-address='%s']/group",
-					   FRR_PIM_AUTORP_XPATH, rpaddr_str);
-				nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY,
-						      NULL);
-			}
-			if (plist) {
-				snprintfrr(xpath, sizeof(xpath),
-					   "%s/candidate-rp-list[rp-address='%s']/prefix-list",
-					   FRR_PIM_AUTORP_XPATH, rpaddr_str);
-				nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY,
-						      NULL);
-			}
-		} else {
-			/* No values set, remove the entire RP */
-			snprintfrr(xpath, sizeof(xpath),
-				   "%s/candidate-rp-list[rp-address='%s']",
-				   FRR_PIM_AUTORP_XPATH, rpaddr_str);
-			nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
-		}
+		nb_cli_enqueue_change(vty, "./if-any", NB_OP_DESTROY, NULL);
+		nb_cli_enqueue_change(vty, "./interface", NB_OP_DESTROY, NULL);
+		nb_cli_enqueue_change(vty, "./address", NB_OP_DESTROY, NULL);
+		nb_cli_enqueue_change(vty, "./if-loopback", NB_OP_DESTROY, NULL);
+		nb_cli_enqueue_change(vty, "./group", NB_OP_DESTROY, NULL);
+		nb_cli_enqueue_change(vty, "./prefix-list", NB_OP_DESTROY, NULL);
 	} else {
-		if ((grp && !is_default_prefix((const struct prefix *)grp)) || plist) {
-			snprintfrr(xpath, sizeof(xpath),
-				   "%s/candidate-rp-list[rp-address='%s']",
-				   FRR_PIM_AUTORP_XPATH, rpaddr_str);
-			nb_cli_enqueue_change(vty, xpath, NB_OP_CREATE, NULL);
-			if (grp && !is_default_prefix((const struct prefix *)grp)) {
-				snprintfrr(xpath, sizeof(xpath),
-					   "%s/candidate-rp-list[rp-address='%s']/group",
-					   FRR_PIM_AUTORP_XPATH, rpaddr_str);
-				nb_cli_enqueue_change(vty, xpath, NB_OP_MODIFY,
-						      prefix2str(grp, grpstr,
-								 sizeof(grpstr)));
-			}
-			if (plist) {
-				snprintfrr(xpath, sizeof(xpath),
-					   "%s/candidate-rp-list[rp-address='%s']/prefix-list",
-					   FRR_PIM_AUTORP_XPATH, rpaddr_str);
-				nb_cli_enqueue_change(vty, xpath, NB_OP_MODIFY,
-						      plist);
-			}
-		} else {
+		/* Enabling candidate rp.
+		 * Loopback is default, so any non-no form of the command will enable the candidate rp.
+		 */
+		if (any)
+			nb_cli_enqueue_change(vty, "./if-any", NB_OP_CREATE, NULL);
+		else if (intf)
+			nb_cli_enqueue_change(vty, "./interface", NB_OP_MODIFY, intf);
+		else if (addr)
+			nb_cli_enqueue_change(vty, "./address", NB_OP_MODIFY, addr);
+		else if (loopback)
+			nb_cli_enqueue_change(vty, "./if-loopback", NB_OP_CREATE, NULL);
+		else
 			return CMD_WARNING_CONFIG_FAILED;
-		}
+
+		if (grp)
+			nb_cli_enqueue_change(vty, "./group", NB_OP_MODIFY, grp);
+		else if (plist)
+			nb_cli_enqueue_change(vty, "./prefix-list", NB_OP_MODIFY, plist);
+		else
+			return CMD_WARNING_CONFIG_FAILED;
 	}
 
-	return nb_cli_apply_changes(vty, NULL);
+	return nb_cli_apply_changes(vty, "%s/%s", FRR_PIM_AUTORP_XPATH, "candidate-rp");
 }
 
-int pim_process_autorp_announce_scope_int_cmd(struct vty *vty, bool no,
-					      const char *scope,
-					      const char *interval,
-					      const char *holdtime)
+int pim_process_autorp_announce_scope_int_cmd(struct vty *vty, bool no, const char *scope, const char *interval, const char *holdtime)
 {
-	char xpath[XPATH_MAXLEN];
+	/* At least one value must be set */
+	if (!scope && !interval && !holdtime)
+		return CMD_WARNING_CONFIG_FAILED;
 
-	if (no) {
-		if (scope || interval || holdtime) {
-			/* If any single values are set, only destroy those */
-			if (scope) {
-				snprintfrr(xpath, sizeof(xpath), "%s/%s",
-					   FRR_PIM_AUTORP_XPATH,
-					   "announce-scope");
-				nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY,
-						      NULL);
-			}
-			if (interval) {
-				snprintfrr(xpath, sizeof(xpath), "%s/%s",
-					   FRR_PIM_AUTORP_XPATH,
-					   "announce-interval");
-				nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY,
-						      NULL);
-			}
-			if (holdtime) {
-				snprintfrr(xpath, sizeof(xpath), "%s/%s",
-					   FRR_PIM_AUTORP_XPATH,
-					   "announce-holdtime");
-				nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY,
-						      NULL);
-			}
-		} else {
-			/* No values set, remove all */
-			snprintfrr(xpath, sizeof(xpath), "%s/%s",
-				   FRR_PIM_AUTORP_XPATH, "announce-scope");
-			nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
-			snprintfrr(xpath, sizeof(xpath), "%s/%s",
-				   FRR_PIM_AUTORP_XPATH, "announce-interval");
-			nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
-			snprintfrr(xpath, sizeof(xpath), "%s/%s",
-				   FRR_PIM_AUTORP_XPATH, "announce-holdtime");
-			nb_cli_enqueue_change(vty, xpath, NB_OP_DESTROY, NULL);
-		}
-	} else {
-		if (scope || interval || holdtime) {
-			if (scope) {
-				snprintfrr(xpath, sizeof(xpath), "%s/%s",
-					   FRR_PIM_AUTORP_XPATH,
-					   "announce-scope");
-				nb_cli_enqueue_change(vty, xpath, NB_OP_MODIFY,
-						      scope);
-			}
-			if (interval) {
-				snprintfrr(xpath, sizeof(xpath), "%s/%s",
-					   FRR_PIM_AUTORP_XPATH,
-					   "announce-interval");
-				nb_cli_enqueue_change(vty, xpath, NB_OP_MODIFY,
-						      interval);
-			}
-			if (holdtime) {
-				snprintfrr(xpath, sizeof(xpath), "%s/%s",
-					   FRR_PIM_AUTORP_XPATH,
-					   "announce-holdtime");
-				nb_cli_enqueue_change(vty, xpath, NB_OP_MODIFY,
-						      holdtime);
-			}
-		} else {
-			return CMD_WARNING_CONFIG_FAILED;
-		}
-	}
+	if (scope)
+		nb_cli_enqueue_change(vty, "./scope", (no ? NB_OP_DESTROY : NB_OP_MODIFY), (no ? NULL : scope));
+	if (interval)
+		nb_cli_enqueue_change(vty, "./interval", (no ? NB_OP_DESTROY : NB_OP_MODIFY), (no ? NULL : interval));
+	if (holdtime)
+		nb_cli_enqueue_change(vty, "./holdtime", (no ? NB_OP_DESTROY : NB_OP_MODIFY), (no ? NULL : holdtime));
 
-	return nb_cli_apply_changes(vty, NULL);
+	return nb_cli_apply_changes(vty, "%s/%s", FRR_PIM_AUTORP_XPATH, "candidate-rp");
 }
 
 bool pim_sgaddr_match(pim_sgaddr item, pim_sgaddr match)
